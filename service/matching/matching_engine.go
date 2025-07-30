@@ -501,6 +501,15 @@ func (e *matchingEngineImpl) AddWorkflowTask(
 	ctx context.Context,
 	addRequest *matchingservice.AddWorkflowTaskRequest,
 ) (buildId string, syncMatch bool, err error) {
+	defer func() {
+		e.logger.Info("Processed AddWorkflowTask",
+			tag.WorkflowID(addRequest.GetExecution().GetWorkflowId()),
+			tag.WorkflowRunID(addRequest.GetExecution().GetRunId()),
+			tag.WorkflowScheduledEventID(addRequest.GetScheduledEventId()),
+			tag.Error(err),
+		)
+	}()
+
 	partition, err := tqid.PartitionFromProto(addRequest.TaskQueue, addRequest.NamespaceId, enumspb.TASK_QUEUE_TYPE_WORKFLOW)
 	if err != nil {
 		return "", false, err
@@ -545,6 +554,15 @@ func (e *matchingEngineImpl) AddActivityTask(
 	ctx context.Context,
 	addRequest *matchingservice.AddActivityTaskRequest,
 ) (buildId string, syncMatch bool, err error) {
+	defer func() {
+		e.logger.Info("Processed AddActivityTask",
+			tag.WorkflowID(addRequest.GetExecution().GetWorkflowId()),
+			tag.WorkflowRunID(addRequest.GetExecution().GetRunId()),
+			tag.WorkflowScheduledEventID(addRequest.GetScheduledEventId()),
+			tag.Error(err),
+		)
+	}()
+
 	partition, err := tqid.PartitionFromProto(addRequest.TaskQueue, addRequest.GetNamespaceId(), enumspb.TASK_QUEUE_TYPE_ACTIVITY)
 	if err != nil {
 		return "", false, err
