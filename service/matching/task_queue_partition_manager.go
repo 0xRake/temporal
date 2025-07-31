@@ -239,6 +239,12 @@ reredirectTask:
 	if isActive {
 		syncMatched, err = syncMatchQueue.TrySyncMatch(ctx, syncMatchTask)
 		if syncMatched && !pm.shouldBacklogSyncMatchTaskOnError(err) {
+			pm.logger.Info("AddTask sync matched",
+				tag.WorkflowID(params.taskInfo.GetWorkflowId()),
+				tag.WorkflowRunID(params.taskInfo.GetRunId()),
+				tag.WorkflowScheduledEventID(params.taskInfo.GetScheduledEventId()),
+				tag.Error(err),
+			)
 
 			// Build ID is not returned for sync match. The returned build ID is used by History to update
 			// mutable state (and visibility) when the first workflow task is spooled.
@@ -264,6 +270,11 @@ reredirectTask:
 		assignedBuildId = spoolQueue.QueueKey().Version().BuildId()
 	}
 
+	pm.logger.Info("AddTask spooling task",
+		tag.WorkflowID(params.taskInfo.GetWorkflowId()),
+		tag.WorkflowRunID(params.taskInfo.GetRunId()),
+		tag.WorkflowScheduledEventID(params.taskInfo.GetScheduledEventId()),
+	)
 	return assignedBuildId, false, spoolQueue.SpoolTask(params.taskInfo)
 }
 

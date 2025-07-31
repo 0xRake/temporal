@@ -124,6 +124,9 @@ func (m *ackManager) completeTask(taskID int64) (newAckLevel, numberOfAckedTasks
 		m.outstandingTasks.Remove(min)
 		numberOfAckedTasks += 1
 	}
+	if numberOfAckedTasks > 0 {
+		m.logger.Info("moving ack level", tag.AckLevel(m.ackLevel))
+	}
 	return m.ackLevel, numberOfAckedTasks
 }
 

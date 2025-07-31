@@ -3,6 +3,7 @@ package matching
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"sync/atomic"
 	"time"
 
@@ -165,7 +166,21 @@ func (w *taskWriter) taskWriterLoop() {
 
 			err := w.assignTaskIDs(reqs)
 			if err == nil {
+				batch := rand.Int63()
+				for _, req := range reqs {
+					w.logger.Info("taskWriter batch",
+						tag.WorkflowID(req.taskInfo.GetWorkflowId()),
+						tag.WorkflowRunID(req.taskInfo.GetRunId()),
+						tag.WorkflowScheduledEventID(req.taskInfo.GetScheduledEventId()),
+						tag.TaskID(req.id),
+						tag.NewInt64("batchid", batch),
+					)
+				}
 				err = w.appendTasks(reqs)
+				w.logger.Info("taskWriter batch result",
+					tag.NewInt64("batchid", batch),
+					tag.Error(err),
+				)
 			}
 			for _, req := range reqs {
 				req.responseCh <- err

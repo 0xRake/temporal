@@ -100,7 +100,20 @@ dispatchLoop:
 			for ctx.Err() == nil {
 				tr.updateBacklogAge(task)
 				taskCtx, cancel := context.WithTimeout(ctx, taskReaderOfferTimeout)
+				tr.logger().Info("taskReader dispatching task",
+					tag.WorkflowID(task.event.Data.GetWorkflowId()),
+					tag.WorkflowRunID(task.event.Data.GetRunId()),
+					tag.WorkflowScheduledEventID(task.event.Data.GetScheduledEventId()),
+					tag.TaskID(task.event.TaskId),
+				)
 				err := tr.backlogMgr.processSpooledTask(taskCtx, task)
+				tr.logger().Info("taskReader dispatching task done",
+					tag.WorkflowID(task.event.Data.GetWorkflowId()),
+					tag.WorkflowRunID(task.event.Data.GetRunId()),
+					tag.WorkflowScheduledEventID(task.event.Data.GetScheduledEventId()),
+					tag.TaskID(task.event.TaskId),
+					tag.Error(err),
+				)
 				cancel()
 				if err == nil {
 					continue dispatchLoop
@@ -124,6 +137,13 @@ dispatchLoop:
 }
 
 func (tr *taskReader) completeTask(task *internalTask, res taskResponse) {
+	tr.logger().Info("taskReader completeTask",
+		tag.WorkflowID(task.event.Data.GetWorkflowId()),
+		tag.WorkflowRunID(task.event.Data.GetRunId()),
+		tag.WorkflowScheduledEventID(task.event.Data.GetScheduledEventId()),
+		tag.TaskID(task.event.TaskId),
+		tag.Error(res.startErr),
+	)
 	tr.backlogMgr.completeTask(task, res.startErr)
 }
 
@@ -253,12 +273,24 @@ func (tr *taskReader) addTasksToBuffer(
 	tasks []*persistencespb.AllocatedTaskInfo,
 ) error {
 	for _, t := range tasks {
+		tr.logger().Info("taskReader task",
+			tag.WorkflowID(t.Data.GetWorkflowId()),
+			tag.WorkflowRunID(t.Data.GetRunId()),
+			tag.WorkflowScheduledEventID(t.Data.GetScheduledEventId()),
+			tag.TaskID(t.TaskId),
+		)
 		if IsTaskExpired(t) {
 			// task is expired when "add tasks to buffer" is called, so when we read it
 			metrics.ExpiredTasksPerTaskQueueCounter.With(tr.taggedMetricsHandler()).Record(1, metrics.TaskExpireStageReadTag)
 			// Also increment readLevel for expired tasks otherwise it could result in
 			// looping over the same tasks if all tasks read in the batch are expired
 			tr.backlogMgr.taskAckManager.setReadLevel(t.GetTaskId())
+			tr.logger().Info("taskReader task expired",
+				tag.WorkflowID(t.Data.GetWorkflowId()),
+				tag.WorkflowRunID(t.Data.GetRunId()),
+				tag.WorkflowScheduledEventID(t.Data.GetScheduledEventId()),
+				tag.TaskID(t.TaskId),
+			)
 			continue
 		}
 		if err := tr.addSingleTaskToBuffer(ctx, t); err != nil {
