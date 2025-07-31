@@ -210,7 +210,7 @@ func (t *transferQueueActiveTaskExecutor) processActivityTask(
 			tag.WorkflowID(task.GetWorkflowID()),
 			tag.WorkflowRunID(task.GetRunID()),
 			tag.TaskID(task.GetTaskID()),
-			tag.Task(task),
+			tag.WorkflowScheduledEventID(task.ScheduledEventID),
 			tag.Error(retError),
 		)
 	}()
@@ -275,7 +275,7 @@ func (t *transferQueueActiveTaskExecutor) processWorkflowTask(
 			tag.WorkflowID(transferTask.GetWorkflowID()),
 			tag.WorkflowRunID(transferTask.GetRunID()),
 			tag.TaskID(transferTask.GetTaskID()),
-			tag.Task(transferTask),
+			tag.WorkflowScheduledEventID(transferTask.ScheduledEventID),
 			tag.Error(retError),
 		)
 	}()
