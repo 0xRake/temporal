@@ -676,15 +676,27 @@ func (s *ContextImpl) UpdateWorkflowExecution(
 		s.updateCloseTaskIDs(request.NewWorkflowSnapshot.ExecutionInfo, request.NewWorkflowSnapshot.Tasks)
 	}
 	for _, task := range request.UpdateWorkflowMutation.Tasks[tasks.CategoryTransfer] {
-		if task.GetType() == enumsspb.TASK_TYPE_TRANSFER_ACTIVITY_TASK ||
-			task.GetType() == enumsspb.TASK_TYPE_TRANSFER_WORKFLOW_TASK {
-			s.GetLogger().Info("Allocated taskID",
-				tag.TaskID(task.GetTaskID()),
-				tag.WorkflowID(task.GetWorkflowID()),
-				tag.WorkflowRunID(task.GetRunID()),
-				tag.TaskType(task.GetType()),
-				tag.Task(task),
-			)
+		if task.GetType() == enumsspb.TASK_TYPE_TRANSFER_ACTIVITY_TASK {
+			if activityTask, ok := task.(*tasks.ActivityTask); ok {
+				s.GetLogger().Info("Allocated activity taskID",
+					tag.TaskID(task.GetTaskID()),
+					tag.WorkflowID(task.GetWorkflowID()),
+					tag.WorkflowRunID(task.GetRunID()),
+					tag.TaskType(task.GetType()),
+					tag.WorkflowScheduledEventID(activityTask.ScheduledEventID),
+				)
+			}
+		}
+		if task.GetType() == enumsspb.TASK_TYPE_TRANSFER_WORKFLOW_TASK {
+			if workflowTask, ok := task.(*tasks.WorkflowTask); ok {
+				s.GetLogger().Info("Allocated workflow taskID",
+					tag.TaskID(task.GetTaskID()),
+					tag.WorkflowID(task.GetWorkflowID()),
+					tag.WorkflowRunID(task.GetRunID()),
+					tag.TaskType(task.GetType()),
+					tag.WorkflowScheduledEventID(workflowTask.ScheduledEventID),
+				)
+			}
 		}
 	}
 
