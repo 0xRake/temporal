@@ -4,6 +4,7 @@ package client
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 
@@ -18,6 +19,10 @@ import (
 	"go.temporal.io/server/client/matching"
 	"go.temporal.io/server/common/cluster"
 	"google.golang.org/grpc"
+)
+
+const (
+	maxAdminClientsPerCluster = 5
 )
 
 type (
@@ -42,8 +47,9 @@ type (
 		clusterMetadata cluster.Metadata
 		factory         Factory
 
-		adminClientsLock    sync.RWMutex
-		adminClients        map[string]adminservice.AdminServiceClient
+		adminClientsLock sync.RWMutex
+		// create a list of admin clients for each cluster, maxAdminClientsPerCluster is the max number of admin clients for each cluster
+		adminClients        map[string][]adminservice.AdminServiceClient
 		frontendClientsLock sync.RWMutex
 		frontendClients     map[string]frontendClient
 	}
@@ -57,7 +63,7 @@ func NewClientBean(factory Factory, clusterMetadata cluster.Metadata) (Bean, err
 		return nil, err
 	}
 
-	adminClients := map[string]adminservice.AdminServiceClient{}
+	adminClients := map[string][]adminservice.AdminServiceClient{}
 	frontendClients := map[string]frontendClient{}
 
 	currentClusterName := clusterMetadata.GetCurrentClusterName()
@@ -76,7 +82,7 @@ func NewClientBean(factory Factory, clusterMetadata cluster.Metadata) (Bean, err
 	if err != nil {
 		return nil, err
 	}
-	adminClients[currentClusterName] = adminClient
+	adminClients[currentClusterName] = []adminservice.AdminServiceClient{adminClient}
 	frontendClients[currentClusterName] = frontendClient{
 		connection:            conn,
 		WorkflowServiceClient: client,
@@ -129,11 +135,15 @@ func (h *clientBeanImpl) GetFrontendClient() workflowservice.WorkflowServiceClie
 
 func (h *clientBeanImpl) GetRemoteAdminClient(cluster string) (adminservice.AdminServiceClient, error) {
 	h.adminClientsLock.RLock()
-	client, ok := h.adminClients[cluster]
-	h.adminClientsLock.RUnlock()
-	if ok {
+	clients, ok := h.adminClients[cluster]
+	if ok && len(clients) >= maxAdminClientsPerCluster {
+		// Random selection
+		index := rand.Intn(len(clients))
+		client := clients[index]
+		h.adminClientsLock.RUnlock()
 		return client, nil
 	}
+	h.adminClientsLock.RUnlock()
 
 	clusterInfo, clusterFound := h.clusterMetadata.GetAllClusterInfo()[cluster]
 	if !clusterFound {
@@ -152,17 +162,27 @@ func (h *clientBeanImpl) GetRemoteAdminClient(cluster string) (adminservice.Admi
 
 	h.adminClientsLock.Lock()
 	defer h.adminClientsLock.Unlock()
-	client, ok = h.adminClients[cluster]
-	if ok {
+	clients, ok = h.adminClients[cluster]
+	if ok && len(clients) >= maxAdminClientsPerCluster {
+		// Random selection
+		index := rand.Intn(len(clients))
+		client := clients[index]
 		return client, nil
 	}
 
-	client = h.factory.NewRemoteAdminClientWithTimeout(
+	// Create first client for this cluster
+	client := h.factory.NewRemoteAdminClientWithTimeout(
 		clusterInfo.RPCAddress,
 		admin.DefaultTimeout,
 		admin.DefaultLargeTimeout,
 	)
-	h.adminClients[cluster] = client
+
+	if !ok {
+		h.adminClients[cluster] = []adminservice.AdminServiceClient{client}
+	} else {
+		h.adminClients[cluster] = append(clients, client)
+	}
+
 	return client, nil
 }
 
