@@ -112,6 +112,15 @@ func (b *clientFactory) createGRPCConnection(c *cli.Context) (*grpc.ClientConn, 
 		grpcSecurityOptions,
 	}
 
+	var defaultCallOptions []grpc.CallOption
+	if c.IsSet(FlagGrpcMaxRecvSize) {
+		defaultCallOptions = append(defaultCallOptions, grpc.MaxCallRecvMsgSize(c.Int(FlagGrpcMaxRecvSize)))
+	}
+
+	if len(defaultCallOptions) > 0 {
+		dialOpts = append(dialOpts, grpc.WithDefaultCallOptions(defaultCallOptions...))
+	}
+
 	connection, err := grpc.NewClient(frontendAddress, dialOpts...)
 	if err != nil {
 		b.logger.Fatal("Failed to create connection", tag.Error(err))

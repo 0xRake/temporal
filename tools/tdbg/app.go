@@ -67,6 +67,11 @@ func NewCliApp(opts ...Option) *cli.App {
 			Usage:   "Optional timeout for context of RPC call in seconds",
 			EnvVars: []string{"TEMPORAL_CONTEXT_TIMEOUT"},
 		},
+		&cli.IntFlag{
+			Name:    FlagGrpcMaxRecvSize,
+			Usage:   "Optional setting for max grpc recv size RPC call in bytes",
+			EnvVars: []string{"TEMPORAL_CONTEXT_TIMEOUT"},
+		},
 		&cli.BoolFlag{
 			Name:  FlagYes,
 			Usage: "Automatically confirm all prompts",
