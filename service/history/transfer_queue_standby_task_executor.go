@@ -131,7 +131,6 @@ func (t *transferQueueStandbyTaskExecutor) executeChasmSideEffectTransferTask(
 	) (any, error) {
 		return validateChasmSideEffectTask(
 			ctx,
-			t.shardContext.ChasmRegistry(),
 			ms,
 			task,
 		)
@@ -161,6 +160,10 @@ func (t *transferQueueStandbyTaskExecutor) processActivityTask(
 		activityInfo, ok := mutableState.GetActivityInfo(transferTask.ScheduledEventID)
 		if !ok {
 			return nil, nil
+		}
+
+		if activityInfo.Stamp != transferTask.Stamp || activityInfo.Paused {
+			return nil, nil // drop the task
 		}
 
 		err := CheckTaskVersion(t.shardContext, t.logger, mutableState.GetNamespaceEntry(), activityInfo.Version, transferTask.Version, transferTask)

@@ -34,6 +34,7 @@ import (
 	hlc "go.temporal.io/server/common/clock/hybrid_logical_clock"
 	"go.temporal.io/server/common/cluster"
 	"go.temporal.io/server/common/collection"
+	"go.temporal.io/server/common/contextutil"
 	"go.temporal.io/server/common/headers"
 	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/log/tag"
@@ -109,6 +110,7 @@ type (
 	matchingEngineImpl struct {
 		status                        int32
 		taskManager                   persistence.TaskManager
+		fairTaskManager               persistence.FairTaskManager
 		historyClient                 resource.HistoryClient
 		matchingRawClient             resource.MatchingRawClient
 		deploymentStoreClient         deployment.DeploymentStoreClient
@@ -191,6 +193,7 @@ var _ Engine = (*matchingEngineImpl)(nil) // Asserts that interface is indeed im
 // NewEngine creates an instance of matching engine
 func NewEngine(
 	taskManager persistence.TaskManager,
+	fairTaskManager persistence.FairTaskManager,
 	historyClient resource.HistoryClient,
 	matchingRawClient resource.MatchingRawClient,
 	deploymentStoreClient deployment.DeploymentStoreClient, // [wv-cleanup-pre-release]
@@ -215,6 +218,7 @@ func NewEngine(
 	e := &matchingEngineImpl{
 		status:                        common.DaemonStatusInitialized,
 		taskManager:                   taskManager,
+		fairTaskManager:               fairTaskManager,
 		historyClient:                 historyClient,
 		matchingRawClient:             matchingRawClient,
 		deploymentStoreClient:         deploymentStoreClient,
@@ -380,6 +384,8 @@ func (e *matchingEngineImpl) getTaskQueuePartitionManager(
 	create bool,
 	loadCause loadCause,
 ) (retPM taskQueuePartitionManager, retCreated bool, retErr error) {
+	var newPM *taskQueuePartitionManagerImpl
+
 	defer func() {
 		if retErr != nil || retPM == nil {
 			return
@@ -387,6 +393,17 @@ func (e *matchingEngineImpl) getTaskQueuePartitionManager(
 
 		if retErr = retPM.WaitUntilInitialized(ctx); retErr != nil {
 			e.unloadTaskQueuePartition(retPM, unloadCauseInitError)
+			return
+		}
+
+		if retCreated {
+			// Whenever a root partition is loaded, we need to force all child partitions to load.
+			// If there is a backlog of tasks on any child partitions, force loading will ensure
+			// that they can forward their tasks the poller which caused the root partition to be
+			// loaded. These partitions could be managed by this matchingEngineImpl, but are most
+			// likely not. We skip checking and just make gRPC requests to force loading them all.
+			// Note that if retCreated is true, retPM must be newPM, so we can use newPM here.
+			newPM.ForceLoadAllChildPartitions()
 		}
 	}()
 
@@ -411,7 +428,6 @@ func (e *matchingEngineImpl) getTaskQueuePartitionManager(
 	tqConfig := newTaskQueueConfig(partition.TaskQueue(), e.config, nsName)
 	tqConfig.loadCause = loadCause
 	logger, throttledLogger, metricsHandler := e.loggerAndMetricsForPartition(nsName, partition, tqConfig)
-	var newPM *taskQueuePartitionManagerImpl
 	onFatalErr := func(cause unloadCause) { newPM.unloadFromEngine(cause) }
 	onUserDataChanged := func() { newPM.userDataChanged() }
 	userDataManager := newUserDataManager(
@@ -450,15 +466,6 @@ func (e *matchingEngineImpl) getTaskQueuePartitionManager(
 	e.partitionsLock.Unlock()
 
 	newPM.Start()
-	if newPM.Partition().IsRoot() {
-		// Whenever a root partition is loaded we need to force all other partitions to load.
-		// If there is a backlog of tasks on any child partitions force loading will ensure that they
-		// can forward their tasks the poller which caused the root partition to be loaded.
-		// These partitions could be managed by this matchingEngineImpl, but are most likely not.
-		// We skip checking and just make gRPC requests to force loading them all.
-
-		newPM.ForceLoadAllNonRootPartitions()
-	}
 	return newPM, true, nil
 }
 
@@ -1298,9 +1305,12 @@ func (e *matchingEngineImpl) DescribeTaskQueue(
 		cacheKey := "dtq_default:" + strings.Join(buildIds, ",")
 		if ts := pm.GetCache(cacheKey); ts != nil {
 			//revive:disable-next-line:unchecked-type-assertion
-			descrResp.DescResponse.Stats = ts.(*taskqueuepb.TaskQueueStats)
+			cachedResp := ts.(*workflowservice.DescribeTaskQueueResponse)
+			descrResp.DescResponse.Stats = cachedResp.Stats
+			descrResp.DescResponse.StatsByPriorityKey = cachedResp.StatsByPriorityKey
 		} else {
 			taskQueueStats := &taskqueuepb.TaskQueueStats{}
+			taskQueueStatsByPriority := make(map[int32]*taskqueuepb.TaskQueueStats)
 
 			// No version was requested, so we need to query all versions.
 			if len(buildIds) == 0 {
@@ -1339,12 +1349,22 @@ func (e *matchingEngineImpl) DescribeTaskQueue(
 					return nil, err
 				}
 				for _, vii := range partitionResp.VersionsInfoInternal {
-					partitionStats := vii.PhysicalTaskQueueInfo.TaskQueueStats
-					mergeStats(taskQueueStats, partitionStats)
+					partitionStats := vii.PhysicalTaskQueueInfo.TaskQueueStatsByPriorityKey
+					for pri, priorityStats := range partitionStats {
+						if _, ok := taskQueueStatsByPriority[pri]; !ok {
+							taskQueueStatsByPriority[pri] = &taskqueuepb.TaskQueueStats{}
+						}
+						mergeStats(taskQueueStats, priorityStats)
+						mergeStats(taskQueueStatsByPriority[pri], priorityStats)
+					}
 				}
 			}
-			pm.PutCache(cacheKey, taskQueueStats)
+			pm.PutCache(cacheKey, &workflowservice.DescribeTaskQueueResponse{
+				Stats:              taskQueueStats,
+				StatsByPriorityKey: taskQueueStatsByPriority,
+			})
 			descrResp.DescResponse.Stats = taskQueueStats
+			descrResp.DescResponse.StatsByPriorityKey = taskQueueStatsByPriority
 		}
 	}
 
@@ -1354,6 +1374,12 @@ func (e *matchingEngineImpl) DescribeTaskQueue(
 			return nil, err
 		}
 		descrResp.DescResponse.Config = userData.GetData().GetPerType()[int32(req.GetTaskQueueType())].GetConfig()
+	}
+
+	effectiveRPS, sourceForEffectiveRPS := pm.GetRateLimitManager().GetEffectiveRPSAndSource()
+	descrResp.DescResponse.EffectiveRateLimit = &workflowservice.DescribeTaskQueueResponse_EffectiveRateLimit{
+		RequestsPerSecond: float32(effectiveRPS),
+		RateLimitSource:   sourceForEffectiveRPS,
 	}
 
 	return descrResp, nil
@@ -1399,9 +1425,10 @@ func (e *matchingEngineImpl) DescribeVersionedTaskQueues(
 		}
 		resp.VersionTaskQueues = append(resp.VersionTaskQueues,
 			&matchingservice.DescribeVersionedTaskQueuesResponse_VersionTaskQueue{
-				Name:  tq.Name,
-				Type:  tq.Type,
-				Stats: tqResp.DescResponse.Stats,
+				Name:               tq.Name,
+				Type:               tq.Type,
+				Stats:              tqResp.DescResponse.Stats,
+				StatsByPriorityKey: tqResp.DescResponse.StatsByPriorityKey,
 			})
 	}
 
@@ -2374,11 +2401,11 @@ func (e *matchingEngineImpl) ListNexusEndpoints(ctx context.Context, request *ma
 	isOwner, ownershipLostCh, err := e.checkNexusEndpointsOwnership()
 	if err != nil {
 		e.logger.Error("Failed to check Nexus endpoints ownership", tag.Error(err))
-		return nil, serviceerror.NewFailedPreconditionf("cannot verify ownership of Nexus endpoints table: %v", err)
+		return nil, serviceerror.NewAbortedf("cannot verify ownership of Nexus endpoints table: %v", err)
 	}
 	if !isOwner {
 		e.logger.Error("Matching node doesn't think it's the Nexus endpoints table owner", tag.Error(err))
-		return nil, serviceerror.NewFailedPrecondition("matching node doesn't think it's the Nexus endpoints table owner")
+		return nil, serviceerror.NewAborted("matching node doesn't think it's the Nexus endpoints table owner")
 	}
 
 	if request.Wait {
@@ -2390,7 +2417,7 @@ func (e *matchingEngineImpl) ListNexusEndpoints(ctx context.Context, request *ma
 		request.LastKnownTableVersion = 0
 
 		var cancel context.CancelFunc
-		ctx, cancel = newChildContext(ctx, e.config.ListNexusEndpointsLongPollTimeout(), returnEmptyTaskTimeBudget)
+		ctx, cancel = contextutil.WithDeadlineBuffer(ctx, e.config.ListNexusEndpointsLongPollTimeout(), returnEmptyTaskTimeBudget)
 		defer cancel()
 	}
 
@@ -2404,7 +2431,7 @@ func (e *matchingEngineImpl) ListNexusEndpoints(ctx context.Context, request *ma
 			// long-poll: wait for data to change/appear
 			select {
 			case <-ownershipLostCh:
-				return nil, serviceerror.NewFailedPrecondition("Nexus endpoints table ownership lost")
+				return nil, serviceerror.NewAborted("Nexus endpoints table ownership lost")
 			case <-ctx.Done():
 				return resp, nil
 			case <-tableVersionChanged:
@@ -2522,7 +2549,7 @@ func (e *matchingEngineImpl) pollTask(
 	// reached, instead of emptyTask, context timeout error is returned to the frontend by the rpc stack,
 	// which counts against our SLO. By shortening the timeout by a very small amount, the emptyTask can be
 	// returned to the handler before a context timeout error is generated.
-	ctx, cancel := newChildContext(ctx, pm.LongPollExpirationInterval(), returnEmptyTaskTimeBudget)
+	ctx, cancel := contextutil.WithDeadlineBuffer(ctx, pm.LongPollExpirationInterval(), returnEmptyTaskTimeBudget)
 	defer cancel()
 
 	if pollerID, ok := ctx.Value(pollerIDKey).(string); ok && pollerID != "" {
@@ -2925,7 +2952,7 @@ func stickyWorkerAvailable(pm taskQueuePartitionManager) bool {
 	return pm != nil && pm.HasPollerAfter("", time.Now().Add(-stickyPollerUnavailableWindow))
 }
 
-func buildRateLimitConfig(update *workflowservice.UpdateTaskQueueConfigRequest_RateLimitUpdate, updateTime *timestamppb.Timestamp) *taskqueuepb.RateLimitConfig {
+func buildRateLimitConfig(update *workflowservice.UpdateTaskQueueConfigRequest_RateLimitUpdate, updateTime *timestamppb.Timestamp, updateIdentity string) *taskqueuepb.RateLimitConfig {
 	var rateLimit *taskqueuepb.RateLimit
 	if r := update.GetRateLimit(); r != nil {
 		rateLimit = &taskqueuepb.RateLimit{RequestsPerSecond: r.RequestsPerSecond}
@@ -2933,8 +2960,9 @@ func buildRateLimitConfig(update *workflowservice.UpdateTaskQueueConfigRequest_R
 	return &taskqueuepb.RateLimitConfig{
 		RateLimit: rateLimit,
 		Metadata: &taskqueuepb.ConfigMetadata{
-			Reason:     update.GetReason(),
-			UpdateTime: updateTime,
+			Reason:         update.GetReason(),
+			UpdateTime:     updateTime,
+			UpdateIdentity: updateIdentity,
 		},
 	}
 }
@@ -2999,13 +3027,14 @@ func (e *matchingEngineImpl) UpdateTaskQueueConfig(ctx context.Context, request 
 			// Update relevant config fields
 			cfg := data.PerType[int32(taskQueueType)].Config
 			updateTaskQueueConfig := request.GetUpdateTaskqueueConfig()
+			updateIdentity := updateTaskQueueConfig.GetIdentity()
 			// Queue Rate Limit
 			if qrl := updateTaskQueueConfig.GetUpdateQueueRateLimit(); qrl != nil {
-				cfg.QueueRateLimit = buildRateLimitConfig(qrl, protoTs)
+				cfg.QueueRateLimit = buildRateLimitConfig(qrl, protoTs, updateIdentity)
 			}
 			// Fairness Queue Rate Limit
 			if fkrl := updateTaskQueueConfig.GetUpdateFairnessKeyRateLimitDefault(); fkrl != nil {
-				cfg.FairnessKeysRateLimitDefault = buildRateLimitConfig(fkrl, protoTs)
+				cfg.FairnessKeysRateLimitDefault = buildRateLimitConfig(fkrl, protoTs, updateIdentity)
 			}
 			// Update the clock on TaskQueueUserData to enforce LWW on config updates
 			data.Clock = now

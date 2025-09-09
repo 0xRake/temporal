@@ -27,6 +27,7 @@ const (
 	resourceExhaustedScopeTag   = "resource_exhausted_scope"
 	PartitionTagName            = "partition"
 	PriorityTagName             = "priority"
+	PersistenceDBKindTagName    = "db_kind"
 )
 
 // This package should hold all the metrics and tags for temporal
@@ -44,6 +45,10 @@ const (
 
 	InvalidHistoryURITagValue    = "invalid_history_uri"
 	InvalidVisibilityURITagValue = "invalid_visibility_uri"
+
+	ActiveNamespaceStateTagValue  = "active"
+	PassiveNamespaceStateTagValue = "passive"
+	UnknownNamespaceStateTagValue = "unknown"
 )
 
 // Admin Client Operations
@@ -549,6 +554,7 @@ const (
 	TaskTypeVisibilityTaskUpsertExecution                 = "VisibilityTaskUpsertExecution"
 	TaskTypeVisibilityTaskCloseExecution                  = "VisibilityTaskCloseExecution"
 	TaskTypeVisibilityTaskDeleteExecution                 = "VisibilityTaskDeleteExecution"
+	TaskTypeVisibilityTaskUpsertChasmExecution            = "VisibilityTaskUpsertChasmExecution"
 	TaskTypeArchivalTaskArchiveExecution                  = "ArchivalTaskArchiveExecution"
 	TaskTypeTimerActiveTaskActivityTimeout                = "TimerActiveTaskActivityTimeout"
 	TaskTypeTimerActiveTaskWorkflowTaskTimeout            = "TimerActiveTaskWorkflowTaskTimeout"
@@ -590,6 +596,21 @@ var (
 		"service_error_with_type",
 		WithDescription("The number of all service request errors by error type."),
 	)
+	ServiceConnAccepted = NewCounterDef(
+		"service_grpc_conn_accepted",
+		WithDescription("Number of gRPC's TCP connections accepted by the service."),
+	)
+	ServiceConnClosed = NewCounterDef(
+		"service_grpc_conn_closed",
+		WithDescription("Number of gRPC's TCP connections closed on the service."),
+	)
+	ServiceConnActive = NewGaugeDef(
+		"service_grpc_conn_active",
+		WithDescription("Current number of gRPC's active TCP connections."),
+	)
+	ServiceDialLatency                       = NewTimerDef("service_dial_latency", WithDescription("The latency of establishing a new TCP connection."))
+	ServiceDialSuccessCount                  = NewCounterDef("service_dial_success", WithDescription("Number of TCP dial attempts that successfully established a connection."))
+	ServiceDialErrorCount                    = NewCounterDef("service_dial_error", WithDescription("Number of TCP dial attempts that failed to establish a connection."))
 	ServiceLatency                           = NewTimerDef("service_latency")
 	ServiceLatencyNoUserLatency              = NewTimerDef("service_latency_nouserlatency")
 	ServiceLatencyUserLatency                = NewTimerDef("service_latency_userlatency")
@@ -809,12 +830,29 @@ var (
 		"pending_tasks",
 		WithDescription("A histogram across history shards for the number of in-memory pending history tasks."),
 	)
-	TaskSchedulerThrottled                               = NewCounterDef("task_scheduler_throttled")
-	QueueScheduleLatency                                 = NewTimerDef("queue_latency_schedule") // latency for scheduling 100 tasks in one task channel
-	QueueReaderCountHistogram                            = NewDimensionlessHistogramDef("queue_reader_count")
-	QueueSliceCountHistogram                             = NewDimensionlessHistogramDef("queue_slice_count")
-	QueueActionCounter                                   = NewCounterDef("queue_actions")
-	ActivityE2ELatency                                   = NewTimerDef("activity_end_to_end_latency")
+	TaskSchedulerThrottled    = NewCounterDef("task_scheduler_throttled")
+	QueueScheduleLatency      = NewTimerDef("queue_latency_schedule") // latency for scheduling 100 tasks in one task channel
+	QueueReaderCountHistogram = NewDimensionlessHistogramDef("queue_reader_count")
+	QueueSliceCountHistogram  = NewDimensionlessHistogramDef("queue_slice_count")
+	QueueActionCounter        = NewCounterDef("queue_actions")
+	ActivityE2ELatency        = NewTimerDef(
+		"activity_end_to_end_latency",
+		WithDescription("DEPRECATED: Will be removed in one of the next releases. Duration of an activity attempt. Use activity_start_to_close_latency instead."),
+	)
+	ActivityStartToCloseLatency = NewTimerDef(
+		"activity_start_to_close_latency",
+		WithDescription("Duration of a single activity attempt. Doesn't include retries or backoffs."),
+	)
+	ActivityScheduleToCloseLatency = NewTimerDef(
+		"activity_schedule_to_close_latency",
+		WithDescription("Duration of activity execution from scheduled time to terminal state. Includes retries and backoffs."),
+	)
+	ActivitySuccess                                      = NewCounterDef("activity_success", WithDescription("Number of activities that succeeded (doesn't include retries)."))
+	ActivityFail                                         = NewCounterDef("activity_fail", WithDescription("Number of activities that failed and won't be retried anymore."))
+	ActivityTaskFail                                     = NewCounterDef("activity_task_fail", WithDescription("Number of activity task failures (includes retries)."))
+	ActivityCancel                                       = NewCounterDef("activity_cancel")
+	ActivityTaskTimeout                                  = NewCounterDef("activity_task_timeout", WithDescription("Number of activity task timeouts (including retries)."))
+	ActivityTimeout                                      = NewCounterDef("activity_timeout", WithDescription("Number of terminal activity timeouts."))
 	AckLevelUpdateCounter                                = NewCounterDef("ack_level_update")
 	AckLevelUpdateFailedCounter                          = NewCounterDef("ack_level_update_failed")
 	CommandCounter                                       = NewCounterDef("command")
@@ -921,6 +959,7 @@ var (
 	WorkflowTimeoutCount                  = NewCounterDef("workflow_timeout")
 	WorkflowTerminateCount                = NewCounterDef("workflow_terminate")
 	WorkflowContinuedAsNewCount           = NewCounterDef("workflow_continued_as_new")
+	WorkflowDuration                      = NewTimerDef("workflow_duration")
 	ReplicationStreamPanic                = NewCounterDef("replication_stream_panic")
 	ReplicationStreamError                = NewCounterDef("replication_stream_error")
 	ReplicationServiceError               = NewCounterDef("replication_service_error")
@@ -1055,7 +1094,16 @@ var (
 	ApproximateBacklogAgeSeconds           = NewGaugeDef("approximate_backlog_age_seconds")
 	NonRetryableTasks                      = NewCounterDef(
 		"non_retryable_tasks",
-		WithDescription("The number of non-retryable matching tasks which are dropped due to specific errors"))
+		WithDescription("The number of non-retryable matching tasks which are dropped due to specific errors"),
+	)
+	TaskCompletedMissing = NewCounterDef(
+		"task_completed_dropped",
+		WithDescription("Count of tasks that were completed after being dropped from the matcher"),
+	)
+	TaskRetryTransient = NewCounterDef(
+		"task_retry_transient",
+		WithDescription("Count of tasks that hit a transient error during match or forward and are retried immediately"),
+	)
 
 	// Versioning and Reachability
 	ReachabilityExitPointCounter = NewCounterDef("reachability_exit_point_count")
@@ -1252,6 +1300,10 @@ var (
 	CassandraSessionRefreshFailures        = NewCounterDef("cassandra_session_refresh_failures")
 	PersistenceSessionRefreshFailures      = NewCounterDef("persistence_session_refresh_failures")
 	PersistenceSessionRefreshAttempts      = NewCounterDef("persistence_session_refresh_attempts")
+	PersistenceSQLMaxOpenConn              = NewGaugeDef("persistence_sql_max_open_conn")
+	PersistenceSQLOpenConn                 = NewGaugeDef("persistence_sql_open_conn")
+	PersistenceSQLIdleConn                 = NewGaugeDef("persistence_sql_idle_conn")
+	PersistenceSQLInUse                    = NewGaugeDef("persistence_sql_in_use")
 
 	// Common service base metrics
 	RestartCount           = NewCounterDef("restarts")
