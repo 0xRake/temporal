@@ -56,7 +56,10 @@ func GetFailureSourceFromContext(ctx context.Context) string {
 		return src
 	}
 	if val, ok := failureSrcCtx.(*atomic.Value); ok {
-		src = val.Load().(string)
+		v := val.Load()
+		if v != nil {
+			src = v.(string)
+		}
 	}
 	return src
 }

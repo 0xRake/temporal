@@ -5127,6 +5127,9 @@ func (wh *WorkflowHandler) StartNexusOperation(ctx context.Context, request *wor
 		return nil, err
 	}
 
+	// Set this value on the parent context so that our custom HTTP caller can mutate it since we cannot access response headers directly.
+	ctx = context.WithValue(ctx, commonnexus.FailureSourceContextKey, &atomic.Value{})
+
 	endpointEntry, err := wh.endpointRegistry.GetByName(ctx, ns.ID(), request.Endpoint)
 	if err != nil {
 		return nil, err
@@ -5148,7 +5151,7 @@ func (wh *WorkflowHandler) StartNexusOperation(ctx context.Context, request *wor
 		var handlerErr *nexus.HandlerError
 		if errors.As(err, &handlerErr) {
 			failureSource := commonnexus.GetFailureSourceFromContext(ctx)
-			if failureSource == commonnexus.FailureSourceWorker {
+			if failureSource == commonnexus.FailureSourceWorker || handlerErr.Type == nexus.HandlerErrorTypeUpstreamTimeout {
 				return &workflowservice.StartNexusOperationResponse{
 					Variant: &workflowservice.StartNexusOperationResponse_HandlerError{
 						HandlerError: commonnexus.NexusHandlerErrorToProtoHandlerError(handlerErr),
@@ -5222,6 +5225,9 @@ func (wh *WorkflowHandler) RequestCancelNexusOperation(ctx context.Context, requ
 		return nil, err
 	}
 
+	// Set this value on the parent context so that our custom HTTP caller can mutate it since we cannot access response headers directly.
+	ctx = context.WithValue(ctx, commonnexus.FailureSourceContextKey, &atomic.Value{})
+
 	endpointEntry, err := wh.endpointRegistry.GetByName(ctx, ns.ID(), request.Endpoint)
 	if err != nil {
 		return nil, err
@@ -5242,7 +5248,7 @@ func (wh *WorkflowHandler) RequestCancelNexusOperation(ctx context.Context, requ
 		var handlerErr *nexus.HandlerError
 		if errors.As(err, &handlerErr) {
 			failureSource := commonnexus.GetFailureSourceFromContext(ctx)
-			if failureSource == commonnexus.FailureSourceWorker {
+			if failureSource == commonnexus.FailureSourceWorker || handlerErr.Type == nexus.HandlerErrorTypeUpstreamTimeout {
 				return &workflowservice.RequestCancelNexusOperationResponse{
 					HandlerError: commonnexus.NexusHandlerErrorToProtoHandlerError(handlerErr),
 				}, nil
@@ -5267,11 +5273,13 @@ func (wh *WorkflowHandler) FetchNexusOperationInfo(ctx context.Context, request 
 		return nil, errNexusGRPCNotAllowed
 	}
 
+	// Set this value on the parent context so that our custom HTTP caller can mutate it since we cannot access response headers directly.
+	ctx = context.WithValue(ctx, commonnexus.FailureSourceContextKey, &atomic.Value{})
+
 	ns, err := wh.namespaceRegistry.GetNamespace(namespace.Name(request.Namespace))
 	if err != nil {
 		return nil, err
 	}
-
 	endpointEntry, err := wh.endpointRegistry.GetByName(ctx, ns.ID(), request.Endpoint)
 	if err != nil {
 		return nil, err
@@ -5292,7 +5300,7 @@ func (wh *WorkflowHandler) FetchNexusOperationInfo(ctx context.Context, request 
 		var handlerErr *nexus.HandlerError
 		if errors.As(err, &handlerErr) {
 			failureSource := commonnexus.GetFailureSourceFromContext(ctx)
-			if failureSource == commonnexus.FailureSourceWorker {
+			if failureSource == commonnexus.FailureSourceWorker || handlerErr.Type == nexus.HandlerErrorTypeUpstreamTimeout {
 				return &workflowservice.FetchNexusOperationInfoResponse{
 					Variant: &workflowservice.FetchNexusOperationInfoResponse_HandlerError{
 						HandlerError: commonnexus.NexusHandlerErrorToProtoHandlerError(handlerErr),
@@ -5326,11 +5334,13 @@ func (wh *WorkflowHandler) FetchNexusOperationResult(ctx context.Context, reques
 		return nil, errNexusGRPCNotAllowed
 	}
 
+	// Set this value on the parent context so that our custom HTTP caller can mutate it since we cannot access response headers directly.
+	ctx = context.WithValue(ctx, commonnexus.FailureSourceContextKey, &atomic.Value{})
+
 	ns, err := wh.namespaceRegistry.GetNamespace(namespace.Name(request.Namespace))
 	if err != nil {
 		return nil, err
 	}
-
 	endpointEntry, err := wh.endpointRegistry.GetByName(ctx, ns.ID(), request.Endpoint)
 	if err != nil {
 		return nil, err
@@ -5348,7 +5358,6 @@ func (wh *WorkflowHandler) FetchNexusOperationResult(ctx context.Context, reques
 		Header: request.GetHeader(),
 		Wait:   request.GetWait().AsDuration(),
 	})
-
 	if err != nil {
 		if errors.Is(err, nexus.ErrOperationStillRunning) {
 			return &workflowservice.FetchNexusOperationResultResponse{
@@ -5360,7 +5369,7 @@ func (wh *WorkflowHandler) FetchNexusOperationResult(ctx context.Context, reques
 		var handlerErr *nexus.HandlerError
 		if errors.As(err, &handlerErr) {
 			failureSource := commonnexus.GetFailureSourceFromContext(ctx)
-			if failureSource == commonnexus.FailureSourceWorker {
+			if failureSource == commonnexus.FailureSourceWorker || handlerErr.Type == nexus.HandlerErrorTypeUpstreamTimeout {
 				return &workflowservice.FetchNexusOperationResultResponse{
 					Variant: &workflowservice.FetchNexusOperationResultResponse_HandlerError{
 						HandlerError: commonnexus.NexusHandlerErrorToProtoHandlerError(handlerErr),
