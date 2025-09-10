@@ -4883,11 +4883,12 @@ func (*SyncActivityResponse) Descriptor() ([]byte, []int) {
 }
 
 type DescribeMutableStateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NamespaceId   string                 `protobuf:"bytes,1,opt,name=namespace_id,json=namespaceId,proto3" json:"namespace_id,omitempty"`
-	Execution     *v14.WorkflowExecution `protobuf:"bytes,2,opt,name=execution,proto3" json:"execution,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	NamespaceId     string                 `protobuf:"bytes,1,opt,name=namespace_id,json=namespaceId,proto3" json:"namespace_id,omitempty"`
+	Execution       *v14.WorkflowExecution `protobuf:"bytes,2,opt,name=execution,proto3" json:"execution,omitempty"`
+	SkipForceReload bool                   `protobuf:"varint,3,opt,name=skip_force_reload,json=skipForceReload,proto3" json:"skip_force_reload,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *DescribeMutableStateRequest) Reset() {
@@ -4934,9 +4935,19 @@ func (x *DescribeMutableStateRequest) GetExecution() *v14.WorkflowExecution {
 	return nil
 }
 
+func (x *DescribeMutableStateRequest) GetSkipForceReload() bool {
+	if x != nil {
+		return x.SkipForceReload
+	}
+	return false
+}
+
 type DescribeMutableStateResponse struct {
-	state                protoimpl.MessageState    `protogen:"open.v1"`
-	CacheMutableState    *v19.WorkflowMutableState `protobuf:"bytes,1,opt,name=cache_mutable_state,json=cacheMutableState,proto3" json:"cache_mutable_state,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// CacheMutableState is only available when mutable state is in cache.
+	CacheMutableState *v19.WorkflowMutableState `protobuf:"bytes,1,opt,name=cache_mutable_state,json=cacheMutableState,proto3" json:"cache_mutable_state,omitempty"`
+	// DatabaseMutableState is always available,
+	// but only loaded from database when mutable state is NOT in cache or skip_force_reload is false.
 	DatabaseMutableState *v19.WorkflowMutableState `protobuf:"bytes,2,opt,name=database_mutable_state,json=databaseMutableState,proto3" json:"database_mutable_state,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
@@ -9472,6 +9483,7 @@ type ListQueuesResponse_QueueInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	QueueName     string                 `protobuf:"bytes,1,opt,name=queue_name,json=queueName,proto3" json:"queue_name,omitempty"`
 	MessageCount  int64                  `protobuf:"varint,2,opt,name=message_count,json=messageCount,proto3" json:"message_count,omitempty"`
+	LastMessageId int64                  `protobuf:"varint,3,opt,name=last_message_id,json=lastMessageId,proto3" json:"last_message_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -9516,6 +9528,13 @@ func (x *ListQueuesResponse_QueueInfo) GetQueueName() string {
 func (x *ListQueuesResponse_QueueInfo) GetMessageCount() int64 {
 	if x != nil {
 		return x.MessageCount
+	}
+	return 0
+}
+
+func (x *ListQueuesResponse_QueueInfo) GetLastMessageId() int64 {
+	if x != nil {
+		return x.LastMessageId
 	}
 	return 0
 }
@@ -10010,10 +10029,11 @@ const file_temporal_server_api_historyservice_v1_request_response_proto_rawDesc 
 	"\x16retry_maximum_interval\x18\x17 \x01(\v2\x19.google.protobuf.DurationR\x14retryMaximumInterval\x124\n" +
 	"\x16retry_maximum_attempts\x18\x18 \x01(\x05R\x14retryMaximumAttempts\x12:\n" +
 	"\x19retry_backoff_coefficient\x18\x19 \x01(\x01R\x17retryBackoffCoefficient\"\x16\n" +
-	"\x14SyncActivityResponse\"\xa6\x01\n" +
+	"\x14SyncActivityResponse\"\xd2\x01\n" +
 	"\x1bDescribeMutableStateRequest\x12!\n" +
 	"\fnamespace_id\x18\x01 \x01(\tR\vnamespaceId\x12G\n" +
-	"\texecution\x18\x02 \x01(\v2).temporal.api.common.v1.WorkflowExecutionR\texecution:\x1b\x92\xc4\x03\x17*\x15execution.workflow_id\"\xf8\x01\n" +
+	"\texecution\x18\x02 \x01(\v2).temporal.api.common.v1.WorkflowExecutionR\texecution\x12*\n" +
+	"\x11skip_force_reload\x18\x03 \x01(\bR\x0fskipForceReload:\x1b\x92\xc4\x03\x17*\x15execution.workflow_id\"\xf8\x01\n" +
 	"\x1cDescribeMutableStateResponse\x12h\n" +
 	"\x13cache_mutable_state\x18\x01 \x01(\v28.temporal.server.api.persistence.v1.WorkflowMutableStateR\x11cacheMutableState\x12n\n" +
 	"\x16database_mutable_state\x18\x02 \x01(\v28.temporal.server.api.persistence.v1.WorkflowMutableStateR\x14databaseMutableState\"\xdf\x01\n" +
@@ -10212,14 +10232,15 @@ const file_temporal_server_api_historyservice_v1_request_response_proto_rawDesc 
 	"\n" +
 	"queue_type\x18\x01 \x01(\x05R\tqueueType\x12\x1b\n" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12&\n" +
-	"\x0fnext_page_token\x18\x03 \x01(\fR\rnextPageToken:\x06\x92\xc4\x03\x02\x10\x01\"\xea\x01\n" +
+	"\x0fnext_page_token\x18\x03 \x01(\fR\rnextPageToken:\x06\x92\xc4\x03\x02\x10\x01\"\x92\x02\n" +
 	"\x12ListQueuesResponse\x12[\n" +
 	"\x06queues\x18\x01 \x03(\v2C.temporal.server.api.historyservice.v1.ListQueuesResponse.QueueInfoR\x06queues\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\fR\rnextPageToken\x1aO\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\fR\rnextPageToken\x1aw\n" +
 	"\tQueueInfo\x12\x1d\n" +
 	"\n" +
 	"queue_name\x18\x01 \x01(\tR\tqueueName\x12#\n" +
-	"\rmessage_count\x18\x02 \x01(\x03R\fmessageCount\"\xee\x01\n" +
+	"\rmessage_count\x18\x02 \x01(\x03R\fmessageCount\x12&\n" +
+	"\x0flast_message_id\x18\x03 \x01(\x03R\rlastMessageId\"\xee\x01\n" +
 	"\x0fAddTasksRequest\x12\x19\n" +
 	"\bshard_id\x18\x01 \x01(\x05R\ashardId\x12Q\n" +
 	"\x05tasks\x18\x02 \x03(\v2;.temporal.server.api.historyservice.v1.AddTasksRequest.TaskR\x05tasks\x1a]\n" +

@@ -166,7 +166,7 @@ func (c *ContextImpl) LoadMutableState(ctx context.Context, shardContext history
 		c.MutableState = mutableState
 	}
 
-	if actualArchetype := c.MutableState.ChasmTree().Archetype(); c.archetype != chasm.ArchetypeAny && c.archetype != actualArchetype {
+	if actualArchetype := c.MutableState.ChasmTree().Archetype(); actualArchetype != "" && c.archetype != chasm.ArchetypeAny && c.archetype != actualArchetype {
 		c.logger.Warn("Potential ID conflict across different archetypes",
 			tag.Archetype(c.archetype.String()),
 			tag.NewStringTag("actual-archetype", actualArchetype.String()),
@@ -246,6 +246,7 @@ func (c *ContextImpl) CreateWorkflowExecution(
 		shardContext,
 		newMutableState.GetCurrentVersion(),
 		createRequest,
+		newMutableState.IsWorkflow(),
 	)
 	if err != nil {
 		return err
@@ -363,6 +364,7 @@ func (c *ContextImpl) ConflictResolveWorkflowExecution(
 		MutableStateFailoverVersion(currentMutableState),
 		currentWorkflow,
 		currentWorkflowEventsSeq,
+		resetMutableState.IsWorkflow(),
 	); err != nil {
 		return err
 	}
@@ -576,6 +578,7 @@ func (c *ContextImpl) UpdateWorkflowExecutionWithNew(
 		MutableStateFailoverVersion(newMutableState),
 		newWorkflow,
 		newWorkflowEventsSeq,
+		c.MutableState.IsWorkflow(),
 	); err != nil {
 		return err
 	}

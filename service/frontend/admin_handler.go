@@ -791,8 +791,9 @@ func (adh *AdminHandler) DescribeMutableState(ctx context.Context, request *admi
 
 	historyAddr := historyHost.GetAddress()
 	historyResponse, err := adh.historyClient.DescribeMutableState(ctx, &historyservice.DescribeMutableStateRequest{
-		NamespaceId: namespaceID.String(),
-		Execution:   request.Execution,
+		NamespaceId:     namespaceID.String(),
+		Execution:       request.Execution,
+		SkipForceReload: request.GetSkipForceReload(),
 	})
 
 	if err != nil {
@@ -2093,8 +2094,9 @@ func (adh *AdminHandler) ListQueues(
 	queues := make([]*adminservice.ListQueuesResponse_QueueInfo, len(resp.Queues))
 	for i, queue := range resp.Queues {
 		queues[i] = &adminservice.ListQueuesResponse_QueueInfo{
-			QueueName:    queue.QueueName,
-			MessageCount: queue.MessageCount,
+			QueueName:     queue.QueueName,
+			MessageCount:  queue.MessageCount,
+			LastMessageId: queue.LastMessageId,
 		}
 	}
 	return &adminservice.ListQueuesResponse{
