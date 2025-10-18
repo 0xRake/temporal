@@ -388,6 +388,19 @@ func (pm *taskQueuePartitionManagerImpl) PollTask(
 
 	if task != nil {
 		task.pollerScalingDecision = dbq.MakePollerScalingDecision(pollMetadata.localPollStartTime)
+		// TODO(carlydf): doing this here adds a read of user data, but ensures that backlogged tasks always get the most recent Target Version (even if they were placed in the backlog before the Target Version changed).
+		if deployment != nil {
+			perTypeUserData, _, err := pm.getPerTypeUserData()
+			if err != nil {
+				return nil, false, err
+			}
+			current, ramping := worker_versioning.CalculateTaskQueueVersioningInfo(perTypeUserData.GetDeploymentData())
+			target := worker_versioning.FindDeploymentVersionForWorkflowID(current, ramping, task.event.Data.WorkflowId)
+			task.targetWorkerDeploymentVersion = &deploymentpb.WorkerDeploymentVersion{
+				BuildId:        target.GetBuildId(),
+				DeploymentName: target.GetDeploymentName(),
+			}
+		}
 	}
 
 	return task, versionSetUsed, err
@@ -1003,7 +1016,9 @@ func (pm *taskQueuePartitionManagerImpl) getPhysicalQueuesForAdd(
 	}
 	deploymentData := perTypeUserData.GetDeploymentData()
 
-	if wfBehavior == enumspb.VERSIONING_BEHAVIOR_PINNED {
+	if wfBehavior == enumspb.VERSIONING_BEHAVIOR_PINNED || wfBehavior == enumspb.VERSIONING_BEHAVIOR_PINNED_UNTIL_CONTINUE_AS_NEW {
+		// TODO(carlydf): I could also get the task's targetWorkerDeploymentVersion here, where we have already read the user data, but then it would be out of date if the target version changes after the task is backlogged
+
 		if pm.partition.Kind() == enumspb.TASK_QUEUE_KIND_STICKY {
 			// TODO (shahab): we can verify the passed deployment matches the last poller's deployment
 			return pm.defaultQueue, pm.defaultQueue, userDataChanged, nil

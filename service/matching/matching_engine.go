@@ -2860,8 +2860,9 @@ func (e *matchingEngineImpl) recordWorkflowTaskStarted(
 		PollRequest:         pollReq,
 		BuildIdRedirectInfo: task.redirectInfo,
 		// TODO: stop sending ScheduledDeployment. [cleanup-old-wv]
-		ScheduledDeployment: worker_versioning.DirectiveDeployment(task.event.Data.VersionDirective),
-		VersionDirective:    task.event.Data.VersionDirective,
+		ScheduledDeployment:     worker_versioning.DirectiveDeployment(task.event.Data.VersionDirective),
+		VersionDirective:        task.event.Data.VersionDirective,
+		TargetDeploymentVersion: task.targetWorkerDeploymentVersion,
 	}
 
 	resp, err := e.historyClient.RecordWorkflowTaskStarted(ctx, recordStartedRequest)

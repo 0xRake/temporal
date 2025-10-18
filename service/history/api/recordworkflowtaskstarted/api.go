@@ -165,6 +165,7 @@ func Invoke(
 				req.GetBuildIdRedirectInfo(),
 				workflowLease.GetContext().UpdateRegistry(ctx),
 				false,
+				req.GetTargetDeploymentVersion(),
 			)
 			if err != nil {
 				// Unable to add WorkflowTaskStarted event to history

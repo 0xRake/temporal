@@ -573,6 +573,7 @@ func (handler *WorkflowTaskCompletedHandler) Invoke(
 				nil,
 				workflowLease.GetContext().UpdateRegistry(ctx),
 				false,
+				nil, // TODO(carlydf): confirm it's ok to set suggestCaN=false here
 			)
 			if err != nil {
 				return nil, err
@@ -696,6 +697,7 @@ func (handler *WorkflowTaskCompletedHandler) Invoke(
 			nil,
 			workflowLease.GetContext().UpdateRegistry(ctx),
 			false,
+			nil, // TODO(carlydf): confirm it's ok to set suggestCaN=false here
 		)
 		if err != nil {
 			return nil, err

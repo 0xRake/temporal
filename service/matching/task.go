@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
+	deploymentpb "go.temporal.io/api/deployment/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	enumsspb "go.temporal.io/server/api/enums/v1"
 	"go.temporal.io/server/api/matchingservice/v1"
@@ -62,9 +63,10 @@ type (
 		redirectInfo *taskqueuespb.BuildIdRedirectInfo
 		// pollerScalingDecision is assigned when the queue has advice to give to the poller about whether
 		// it should adjust its poller count
-		pollerScalingDecision *taskqueuepb.PollerScalingDecision
-		recycleToken          func(*internalTask)
-		removeFromMatcher     atomic.Pointer[func()]
+		pollerScalingDecision         *taskqueuepb.PollerScalingDecision
+		recycleToken                  func(*internalTask)
+		removeFromMatcher             atomic.Pointer[func()]
+		targetWorkerDeploymentVersion *deploymentpb.WorkerDeploymentVersion
 
 		// These fields are for use by matcherData:
 		waitableMatchResult

@@ -113,6 +113,7 @@ func NewWorkflowWithSignal(
 			nil,
 			nil,
 			false,
+			nil, // TODO(carlydf): confirm it's ok to set suggestCaN=false here
 		)
 		if err != nil {
 			// Unable to add WorkflowTaskStarted event to history

@@ -234,6 +234,9 @@ message RecordWorkflowTaskStartedRequest {
     temporal.api.deployment.v1.Deployment scheduled_deployment = 9;
     // Versioning directive that was sent by history when scheduling the task.
     temporal.server.api.taskqueue.v1.TaskVersionDirective version_directive = 10;
+    // Target worker deployment version according to matching when starting the task.
+    // TODO(carlydf): Decide whether to compute this before enqueing to backlog, or after matching with a poller
+    temporal.api.deployment.v1.WorkerDeploymentVersion target_deployment_version = 11;
 }
 
 message RecordWorkflowTaskStartedResponse {
