@@ -8,6 +8,7 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
 	commonnexus "go.temporal.io/server/common/nexus"
@@ -43,25 +44,20 @@ func handleSuccessfulOperationResult(
 func handleOperationError(
 	node *hsm.Node,
 	operation Operation,
-	opFailedError *nexus.OperationError,
+	opErr *nexus.OperationError,
 ) error {
 	eventID, err := hsm.EventIDFromToken(operation.ScheduledEventToken)
 	if err != nil {
 		return err
 	}
-	failure, err := commonnexus.OperationErrorToTemporalFailure(opFailedError)
-	if err != nil {
-		return err
-	}
-
-	switch opFailedError.State { // nolint:exhaustive
+	switch opErr.State { // nolint:exhaustive
 	case nexus.OperationStateFailed:
 		event := node.AddHistoryEvent(enumspb.EVENT_TYPE_NEXUS_OPERATION_FAILED, func(e *historypb.HistoryEvent) {
 			// We must assign to this property, linter doesn't like this.
 			// nolint:revive
 			e.Attributes = &historypb.HistoryEvent_NexusOperationFailedEventAttributes{
 				NexusOperationFailedEventAttributes: &historypb.NexusOperationFailedEventAttributes{
-					Failure:          nexusOperationFailure(operation, eventID, failure),
+					Failure:          translateFromNexusOpErrorToTemporalOpError(operation, eventID, opErr),
 					ScheduledEventId: eventID,
 					RequestId:        operation.RequestId,
 				},
@@ -75,7 +71,7 @@ func handleOperationError(
 			// nolint:revive
 			e.Attributes = &historypb.HistoryEvent_NexusOperationCanceledEventAttributes{
 				NexusOperationCanceledEventAttributes: &historypb.NexusOperationCanceledEventAttributes{
-					Failure:          nexusOperationFailure(operation, eventID, failure),
+					Failure:          translateFromNexusOpErrorToTemporalOpError(operation, eventID, opErr),
 					ScheduledEventId: eventID,
 					RequestId:        operation.RequestId,
 				},
@@ -86,7 +82,46 @@ func handleOperationError(
 	default:
 		// Both the Nexus Client and CompletionHandler reject invalid states, but just in case, we return this as a
 		// transition error.
-		return fmt.Errorf("unexpected operation state: %v", opFailedError.State)
+		return fmt.Errorf("unexpected operation state: %v", opErr.State)
+	}
+}
+
+func translateFromNexusOpErrorToTemporalOpError(operation Operation, scheduledEventID int64, opErr *nexus.OperationError) *failurepb.Failure {
+	opErrFailure := commonnexus.TemporalDefaultFailureConverter.ErrorToFailure(opErr)
+	topLevelFailure := nexusOperationFailure(operation, scheduledEventID, opErrFailure.Cause)
+	topLevelFailure.Message = opErrFailure.Message
+	topLevelFailure.StackTrace = opErrFailure.StackTrace
+	topLevelFailure.EncodedAttributes = opErrFailure.EncodedAttributes
+	if opErr.State == nexus.OperationStateCanceled && topLevelFailure.GetCanceledFailureInfo() == nil {
+		// Ensure that the cause is set to a CanceledFailureInfo if the operation was canceled to be consistent with how
+		// cancelation is propagated across all workflow commands.
+		// Also preserve the original cause if it exists.
+		topLevelFailure.Cause = &failurepb.Failure{
+			Message: "operation completed as canceled",
+			FailureInfo: &failurepb.Failure_CanceledFailureInfo{
+				CanceledFailureInfo: &failurepb.CanceledFailureInfo{},
+			},
+			Cause: topLevelFailure.Cause,
+		}
+	}
+	return topLevelFailure
+}
+
+func nexusOperationFailure(operation Operation, scheduledEventID int64, cause *failurepb.Failure) *failurepb.Failure {
+	return &failurepb.Failure{
+		Message: "nexus operation completed unsuccessfully",
+		FailureInfo: &failurepb.Failure_NexusOperationExecutionFailureInfo{
+			NexusOperationExecutionFailureInfo: &failurepb.NexusOperationFailureInfo{
+				Endpoint:       operation.Endpoint,
+				Service:        operation.Service,
+				Operation:      operation.Operation,
+				OperationToken: operation.OperationToken,
+				// TODO(bergundy): This field is deprecated, remove it after the 1.27 release.
+				OperationId:      operation.OperationToken,
+				ScheduledEventId: scheduledEventID,
+			},
+		},
+		Cause: cause,
 	}
 }
 
@@ -141,7 +176,7 @@ func CompletionHandler(
 	startTime *timestamppb.Timestamp,
 	links []*commonpb.Link,
 	result *commonpb.Payload,
-	opFailedError *nexus.OperationError,
+	opErr *nexus.OperationError,
 ) error {
 	// The initial version of the completion token did not include a request ID.
 	// Only retry Access without a run ID if the request ID is not empty.
@@ -161,8 +196,8 @@ func CompletionHandler(
 			isRetryableNotFoundErr = false
 			return serviceerror.NewNotFound("operation not found")
 		}
-		if opFailedError != nil {
-			err = handleOperationError(node, operation, opFailedError)
+		if opErr != nil {
+			err = handleOperationError(node, operation, opErr)
 		} else {
 			err = handleSuccessfulOperationResult(node, operation, result, nil)
 		}
@@ -183,7 +218,7 @@ func CompletionHandler(
 		ref.StateMachineRef.MutableStateVersionedTransition = nil
 		ref.StateMachineRef.MachineInitialVersionedTransition.TransitionCount = 0
 		ref.StateMachineRef.MachineLastUpdateVersionedTransition.TransitionCount = 0
-		return CompletionHandler(ctx, env, ref, requestID, operationToken, startTime, links, result, opFailedError)
+		return CompletionHandler(ctx, env, ref, requestID, operationToken, startTime, links, result, opErr)
 	}
 	return err
 }

@@ -4989,6 +4989,10 @@ func (wh *WorkflowHandler) RespondNexusTaskCompleted(ctx context.Context, reques
 	}
 	namespaceId := namespace.ID(tt.GetNamespaceId())
 
+	if failure := request.GetResponse().GetStartOperation().GetFailure(); failure != nil && failure.GetNexusSdkOperationFailureInfo() == nil {
+		return nil, serviceerror.NewInvalidArgument("request StartOperation Failure must contain failure with GetNexusSdkOperationFailureInfo")
+	}
+
 	// NOTE: Not checking blob size limit here as we already enforce the 4 MB gRPC request limit and since this
 	// doesn't go into workflow history, and the Nexus request caller is unknown, there doesn't seem like there's a
 	// good reason to fail at this point.
@@ -5019,6 +5023,14 @@ func (wh *WorkflowHandler) RespondNexusTaskFailed(ctx context.Context, request *
 
 	if request == nil {
 		return nil, errRequestNotSet
+	}
+
+	if request.Error == nil || request.Failure == nil {
+		return nil, serviceerror.NewInvalidArgument("request must contain error or failure")
+	}
+
+	if request.Error == nil && request.Failure.GetNexusHandlerFailureInfo() == nil {
+		return nil, serviceerror.NewInvalidArgument("request Failure must contain error or failure with NexusHandlerFailureInfo")
 	}
 
 	// Both the task token and the request have a reference to a namespace. We prefer using the namespace ID from
