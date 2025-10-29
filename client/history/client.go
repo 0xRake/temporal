@@ -108,6 +108,32 @@ func (c *clientImpl) DescribeHistoryHost(
 	return response, nil
 }
 
+// RecordWorkerHeartbeat creates or updates a WorkerSession CHASM entity to track worker liveness.
+// This method implements custom shard routing based on namespace_id + worker_instance_key.
+func (c *clientImpl) RecordWorkerHeartbeat(
+	ctx context.Context,
+	request *historyservice.RecordWorkerHeartbeatRequest,
+	opts ...grpc.CallOption,
+) (*historyservice.RecordWorkerHeartbeatResponse, error) {
+	// Calculate shard ID based on namespace_id + worker_instance_key
+	// This ensures that all heartbeats for the same worker go to the same shard
+	shardingKey := request.GetNamespaceId() + "_" + request.GetWorkerInstanceKey()
+	shardID := common.ShardingKeyToShard(shardingKey, c.numberOfShards)
+
+	var response *historyservice.RecordWorkerHeartbeatResponse
+	op := func(ctx context.Context, client historyservice.HistoryServiceClient) error {
+		var err error
+		ctx, cancel := c.createContext(ctx)
+		defer cancel()
+		response, err = client.RecordWorkerHeartbeat(ctx, request, opts...)
+		return err
+	}
+	if err := c.executeWithRedirect(ctx, shardID, op); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 func (c *clientImpl) GetReplicationMessages(
 	ctx context.Context,
 	request *historyservice.GetReplicationMessagesRequest,
