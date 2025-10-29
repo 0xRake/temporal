@@ -24,9 +24,7 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-var (
-	_ historyservice.HistoryServiceClient = (*clientImpl)(nil)
-)
+var _ historyservice.HistoryServiceClient = (*clientImpl)(nil)
 
 const (
 	// DefaultTimeout is the default timeout used to make calls
@@ -84,8 +82,8 @@ func (c *clientImpl) DeepHealthCheck(ctx context.Context, request *historyservic
 func (c *clientImpl) DescribeHistoryHost(
 	ctx context.Context,
 	request *historyservice.DescribeHistoryHostRequest,
-	opts ...grpc.CallOption) (*historyservice.DescribeHistoryHostResponse, error) {
-
+	opts ...grpc.CallOption,
+) (*historyservice.DescribeHistoryHostResponse, error) {
 	var shardID int32
 	if request.GetShardId() != 0 {
 		shardID = request.GetShardId()
