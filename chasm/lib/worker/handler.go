@@ -2,8 +2,10 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/server/chasm"
 	workerstatepb "go.temporal.io/server/chasm/lib/worker/gen/workerpb/v1"
 )
@@ -25,30 +27,42 @@ func (h *handler) RecordHeartbeat(ctx context.Context, req *workerstatepb.Record
 
 	workerHeartbeat := frontendReq.GetWorkerHeartbeat()[0]
 
-	// Try to update existing worker, or create new one if it doesn't exist
-	createResp, updateResp, _, _, err := chasm.UpdateWithNewEntity(
+	// Try to update existing worker first
+	resp, _, err := chasm.UpdateComponent(
 		ctx,
-		chasm.EntityKey{
-			NamespaceID: req.NamespaceId,
-			BusinessID:  workerHeartbeat.WorkerInstanceKey,
-		},
-		func(ctx chasm.MutableContext, req *workerstatepb.RecordHeartbeatRequest) (*Worker, *workerstatepb.RecordHeartbeatResponse, error) {
-			// Create new worker and record heartbeat
-			w := NewWorker()
-			resp, err := w.recordHeartbeat(ctx, req)
-			return w, resp, err
-		},
+		chasm.NewComponentRef[*Worker](
+			chasm.EntityKey{
+				NamespaceID: req.NamespaceId,
+				BusinessID:  workerHeartbeat.WorkerInstanceKey,
+			},
+		),
 		(*Worker).recordHeartbeat,
 		req,
 	)
 
+	// If worker doesn't exist, create it
 	if err != nil {
+		if errors.As(err, new(*serviceerror.NotFound)) {
+			resp, _, _, err = chasm.NewEntity(
+				ctx,
+				chasm.EntityKey{
+					NamespaceID: req.NamespaceId,
+					BusinessID:  workerHeartbeat.WorkerInstanceKey,
+				},
+				func(ctx chasm.MutableContext, req *workerstatepb.RecordHeartbeatRequest) (*Worker, *workerstatepb.RecordHeartbeatResponse, error) {
+					w := NewWorker()
+					resp, err := w.recordHeartbeat(ctx, req)
+					return w, resp, err
+				},
+				req,
+			)
+			if err != nil {
+				return nil, err
+			}
+			return resp, nil
+		}
 		return nil, err
 	}
 
-	// Return whichever response is populated (create or update)
-	if createResp != nil {
-		return createResp, nil
-	}
-	return updateResp, nil
+	return resp, nil
 }
