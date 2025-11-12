@@ -291,7 +291,11 @@ func (c *HTTPClient) StartOperation(
 			return nil, err
 		}
 
-		failureErr := c.options.FailureConverter.FailureToError(failure)
+		failureErr, err := c.options.FailureConverter.FailureToError(failure)
+		if err != nil {
+			return nil, err
+		}
+
 		return nil, &nexus.OperationError{
 			State: state,
 			Cause: failureErr,
@@ -335,11 +339,11 @@ func readAndReplaceBody(response *http.Response) ([]byte, error) {
 	return body, err
 }
 
-func operationInfoFromResponse(response *http.Response, body []byte) (*nexus.OperationInfo, error) {
+func operationInfoFromResponse(response *http.Response, body []byte) (*OperationInfo, error) {
 	if !isMediaTypeJSON(response.Header.Get("Content-Type")) {
 		return nil, newUnexpectedResponseError(fmt.Sprintf("invalid response content type: %q", response.Header.Get("Content-Type")), response, body)
 	}
-	var info nexus.OperationInfo
+	var info OperationInfo
 	if err := json.Unmarshal(body, &info); err != nil {
 		return nil, err
 	}
@@ -365,7 +369,11 @@ func (c *HTTPClient) failureFromResponseOrDefault(response *http.Response, body 
 
 func (c *HTTPClient) failureErrorFromResponseOrDefault(response *http.Response, body []byte, defaultMessage string) error {
 	failure := c.failureFromResponseOrDefault(response, body, defaultMessage)
-	failureErr := c.options.FailureConverter.FailureToError(failure)
+	failureErr, err := c.options.FailureConverter.FailureToError(failure)
+	if err != nil {
+		return err
+	}
+
 	return failureErr
 }
 
@@ -431,7 +439,7 @@ func (c *HTTPClient) bestEffortHandlerErrorFromResponse(response *http.Response,
 			Cause:         c.failureErrorFromResponseOrDefault(response, body, "unavailable"),
 			RetryBehavior: retryBehaviorFromHeader(response.Header),
 		}
-	case nexus.StatusUpstreamTimeout:
+	case StatusUpstreamTimeout:
 		return &nexus.HandlerError{
 			Type:          nexus.HandlerErrorTypeUpstreamTimeout,
 			Cause:         c.failureErrorFromResponseOrDefault(response, body, "upstream timeout"),

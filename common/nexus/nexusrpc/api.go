@@ -28,6 +28,21 @@ const (
 	headerRetryable          = "nexus-request-retryable"
 )
 
+const (
+	StatusUpstreamTimeout = 520
+)
+
+type OperationInfo struct {
+	// ID of the operation.
+	//
+	// Deprecated: Use Token instead.
+	ID string `json:"id"`
+	// Token for the operation.
+	Token string `json:"token"`
+	// State of the operation.
+	State nexus.OperationState `json:"state"`
+}
+
 const contentTypeJSON = "application/json"
 
 // Query param for passing a callback URL.

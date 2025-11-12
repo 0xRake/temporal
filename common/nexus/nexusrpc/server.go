@@ -23,7 +23,7 @@ func applyResultToHTTPResponse(r nexus.HandlerStartOperationResult[any], writer 
 	case interface{ ValueAsAny() any }:
 		handler.writeResult(writer, r.ValueAsAny())
 	case *nexus.HandlerStartOperationResultAsync:
-		info := nexus.OperationInfo{
+		info := OperationInfo{
 			Token: r.OperationToken,
 			State: nexus.OperationStateRunning,
 		}
@@ -98,7 +98,12 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 
 	if errors.As(err, &opError) {
 		operationState = opError.State
-		failure = h.failureConverter.ErrorToFailure(opError.Cause)
+		failure, err = h.failureConverter.ErrorToFailure(opError.Cause)
+		if err != nil {
+			h.logger.Error("failed to convert operation error cause to failure", "error", err)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		statusCode = statusOperationFailed
 
 		if operationState != nexus.OperationStateFailed && operationState != nexus.OperationStateCanceled {
@@ -108,7 +113,12 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 		}
 		writer.Header().Set(headerOperationState, string(operationState))
 	} else if errors.As(err, &handlerError) {
-		failure = h.failureConverter.ErrorToFailure(handlerError.Cause)
+		failure, err = h.failureConverter.ErrorToFailure(handlerError.Cause)
+		if err != nil {
+			h.logger.Error("failed to convert handler error cause to failure", "error", err)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		switch handlerError.Type {
 		case nexus.HandlerErrorTypeBadRequest:
 			statusCode = http.StatusBadRequest
@@ -131,7 +141,7 @@ func (h *baseHTTPHandler) writeFailure(writer http.ResponseWriter, err error) {
 		case nexus.HandlerErrorTypeUnavailable:
 			statusCode = http.StatusServiceUnavailable
 		case nexus.HandlerErrorTypeUpstreamTimeout:
-			statusCode = nexus.StatusUpstreamTimeout
+			statusCode = StatusUpstreamTimeout
 		default:
 			h.logger.Error("unexpected handler error type", "type", handlerError.Type)
 		}

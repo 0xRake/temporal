@@ -781,24 +781,6 @@ func (e taskExecutor) lookupEndpoint(ctx context.Context, namespaceID namespace.
 	return entry, nil
 }
 
-func nexusOperationFailure(operation Operation, scheduledEventID int64, cause *failurepb.Failure) *failurepb.Failure {
-	return &failurepb.Failure{
-		Message: "nexus operation completed unsuccessfully",
-		FailureInfo: &failurepb.Failure_NexusOperationExecutionFailureInfo{
-			NexusOperationExecutionFailureInfo: &failurepb.NexusOperationFailureInfo{
-				Endpoint:       operation.Endpoint,
-				Service:        operation.Service,
-				Operation:      operation.Operation,
-				OperationToken: operation.OperationToken,
-				// TODO(bergundy): This field is deprecated, remove it after the 1.27 release.
-				OperationId:      operation.OperationToken,
-				ScheduledEventId: scheduledEventID,
-			},
-		},
-		Cause: cause,
-	}
-}
-
 // FIXME(JWH): not sure on rebase
 func startCallOutcomeTag(callCtx context.Context, result *nexusrpc.ClientStartOperationResponse[*nexus.LazyValue], callErr error) string {
 	var handlerError *nexus.HandlerError

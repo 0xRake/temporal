@@ -27,6 +27,13 @@ const (
 	FailureSourceWorker = "worker"
 )
 
+const (
+	statusOperationRunning = http.StatusPreconditionFailed
+	// HTTP status code for failed operation responses.
+	statusOperationFailed = http.StatusFailedDependency
+	StatusUpstreamTimeout = 520
+)
+
 type failureSourceContextKeyType struct{}
 
 var FailureSourceContextKey = failureSourceContextKeyType{}
@@ -371,7 +378,7 @@ func HandlerErrorTypeFromHTTPStatus(statusCode int) nexus.HandlerErrorType {
 		return nexus.HandlerErrorTypeNotImplemented
 	case http.StatusServiceUnavailable:
 		return nexus.HandlerErrorTypeUnavailable
-	case nexus.StatusUpstreamTimeout:
+	case StatusUpstreamTimeout:
 		return nexus.HandlerErrorTypeUpstreamTimeout
 	default:
 		return nexus.HandlerErrorTypeInternal

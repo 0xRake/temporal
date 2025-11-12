@@ -186,7 +186,10 @@ func NewOperationCompletionUnsuccessful(opErr *nexus.OperationError, options Ope
 	if options.FailureConverter == nil {
 		options.FailureConverter = nexus.DefaultFailureConverter()
 	}
-	failure := options.FailureConverter.ErrorToFailure(opErr.Cause)
+	failure, err := options.FailureConverter.ErrorToFailure(opErr.Cause)
+	if err != nil {
+		return nil, err
+	}
 
 	return &OperationCompletionUnsuccessful{
 		Header:         make(nexus.Header),
@@ -322,7 +325,12 @@ func (h *completionHTTPHandler) ServeHTTP(writer http.ResponseWriter, request *h
 			h.writeFailure(writer, nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "failed to read Failure from request body"))
 			return
 		}
-		completion.Error = h.failureConverter.FailureToError(failure)
+		completion.Error, err = h.failureConverter.FailureToError(failure)
+		if err != nil {
+			h.writeFailure(writer, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "failed to convert failure"))
+			return
+		}
+
 	case nexus.OperationStateSucceeded:
 		completion.Result = nexus.NewLazyValue(
 			h.options.Serializer,
