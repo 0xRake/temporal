@@ -36,7 +36,7 @@ func (h *handler) RecordHeartbeat(ctx context.Context, req *workerstatepb.Record
 	workerHeartbeat := frontendReq.GetWorkerHeartbeat()[0]
 
 	// Try to update existing worker, or create new one if it doesn't exist
-	_, _, _, _, err := chasm.UpdateWithNewEntity(
+	createResp, updateResp, _, _, err := chasm.UpdateWithNewEntity(
 		ctx,
 		chasm.EntityKey{
 			NamespaceID: req.NamespaceId,
@@ -45,20 +45,10 @@ func (h *handler) RecordHeartbeat(ctx context.Context, req *workerstatepb.Record
 		func(ctx chasm.MutableContext, req *workerstatepb.RecordHeartbeatRequest) (*Worker, *workerstatepb.RecordHeartbeatResponse, error) {
 			// Create new worker and record heartbeat
 			w := NewWorker()
-			err := w.recordHeartbeat(ctx, req)
-			if err != nil {
-				return nil, nil, err
-			}
-			return w, &workerstatepb.RecordHeartbeatResponse{}, nil
+			resp, err := w.recordHeartbeat(ctx, req)
+			return w, resp, err
 		},
-		func(w *Worker, ctx chasm.MutableContext, req *workerstatepb.RecordHeartbeatRequest) (*workerstatepb.RecordHeartbeatResponse, error) {
-			// Update existing worker with new heartbeat
-			err := w.recordHeartbeat(ctx, req)
-			if err != nil {
-				return nil, err
-			}
-			return &workerstatepb.RecordHeartbeatResponse{}, nil
-		},
+		(*Worker).recordHeartbeat,
 		req,
 	)
 
@@ -66,5 +56,9 @@ func (h *handler) RecordHeartbeat(ctx context.Context, req *workerstatepb.Record
 		return nil, err
 	}
 
-	return &workerstatepb.RecordHeartbeatResponse{}, nil
+	// Return whichever response is populated (create or update)
+	if createResp != nil {
+		return createResp, nil
+	}
+	return updateResp, nil
 }

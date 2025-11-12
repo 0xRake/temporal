@@ -59,8 +59,9 @@ func TestWorkerRecordHeartbeat(t *testing.T) {
 	}
 
 	// Test recording heartbeat on new worker
-	err := worker.recordHeartbeat(ctx, req)
+	resp, err := worker.recordHeartbeat(ctx, req)
 	require.NoError(t, err)
+	require.NotNil(t, resp)
 
 	// Verify heartbeat data was set
 	require.Equal(t, "test-worker-3", worker.workerID())

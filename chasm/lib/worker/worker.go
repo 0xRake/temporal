@@ -64,7 +64,7 @@ func (w *Worker) workerID() string {
 }
 
 // recordHeartbeat processes a heartbeat, updating worker state and extending the lease.
-func (w *Worker) recordHeartbeat(ctx chasm.MutableContext, req *workerstatepb.RecordHeartbeatRequest) error {
+func (w *Worker) recordHeartbeat(ctx chasm.MutableContext, req *workerstatepb.RecordHeartbeatRequest) (*workerstatepb.RecordHeartbeatResponse, error) {
 	// Extract worker heartbeat from request
 	frontendReq := req.GetFrontendRequest()
 	workerHeartbeat := frontendReq.GetWorkerHeartbeat()[0]
@@ -78,18 +78,25 @@ func (w *Worker) recordHeartbeat(ctx chasm.MutableContext, req *workerstatepb.Re
 	leaseDeadline := ctx.Now(w).Add(leaseDuration)
 
 	// Apply appropriate state transition based on current status
+	var err error
 	switch w.Status {
 	case workerstatepb.WORKER_STATUS_ACTIVE:
-		return TransitionActiveHeartbeat.Apply(ctx, w, EventHeartbeatReceived{
+		err = TransitionActiveHeartbeat.Apply(ctx, w, EventHeartbeatReceived{
 			LeaseDeadline: leaseDeadline,
 		})
 	case workerstatepb.WORKER_STATUS_INACTIVE:
 		// Handle worker resurrection (example network partition, overloaded worker, etc.)
-		return TransitionResurrected.Apply(ctx, w, EventHeartbeatReceived{
+		err = TransitionResurrected.Apply(ctx, w, EventHeartbeatReceived{
 			LeaseDeadline: leaseDeadline,
 		})
 	default:
 		// CLEANED_UP or other states - not allowed
-		return fmt.Errorf("cannot record heartbeat for worker in state %v", w.Status)
+		err = fmt.Errorf("cannot record heartbeat for worker in state %v", w.Status)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &workerstatepb.RecordHeartbeatResponse{}, nil
 }
