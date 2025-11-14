@@ -105,6 +105,7 @@ func (tv *TestVars) clone() *TestVars {
 
 	return tv2
 }
+
 func (tv *TestVars) cloneSetVal(key string, val any) *TestVars {
 	tv2 := tv.clone()
 	tv2.values.Store(key, val)

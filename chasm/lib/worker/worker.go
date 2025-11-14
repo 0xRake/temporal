@@ -17,6 +17,13 @@ const (
 	defaultLeaseDuration = 1 * time.Minute
 )
 
+// Search attribute definitions for worker visibility.
+var (
+	WorkerStatusSearchAttribute = chasm.NewSearchAttributeKeyword("WorkerStatus", chasm.SearchAttributeFieldKeyword01)
+
+	_ chasm.VisibilitySearchAttributesProvider = (*Worker)(nil)
+)
+
 // Worker is a Chasm component that tracks worker heartbeats and manages worker lifecycle.
 type Worker struct {
 	chasm.UnimplementedComponent
@@ -99,4 +106,11 @@ func (w *Worker) recordHeartbeat(ctx chasm.MutableContext, req *workerstatepb.Re
 	}
 
 	return &workerstatepb.RecordHeartbeatResponse{}, nil
+}
+
+// SearchAttributes implements chasm.VisibilitySearchAttributesProvider interface.
+func (w *Worker) SearchAttributes(_ chasm.Context) []chasm.SearchAttributeKeyValue {
+	return []chasm.SearchAttributeKeyValue{
+		WorkerStatusSearchAttribute.Value(w.Status.String()),
+	}
 }
