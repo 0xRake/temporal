@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 
+	enumspb "go.temporal.io/api/enums/v1"
 	clockspb "go.temporal.io/server/api/clock/v1"
 	enumsspb "go.temporal.io/server/api/enums/v1"
 	"go.temporal.io/server/common/definition"
@@ -78,8 +79,8 @@ func UpdateWorkflowWithNew(
 
 	mutableState := workflowLease.GetMutableState()
 	if postActions.CreateWorkflowTask {
-		// Create a transfer task to schedule a workflow task
-		if !mutableState.HasPendingWorkflowTask() {
+		// Create a transfer task to schedule a workflow task only if the workflow is in running status and there is no pending workflow task.
+		if !mutableState.HasPendingWorkflowTask() && mutableState.GetExecutionState().GetStatus() == enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING {
 			if _, err := mutableState.AddWorkflowTaskScheduledEvent(
 				false,
 				enumsspb.WORKFLOW_TASK_TYPE_NORMAL,
