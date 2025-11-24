@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,6 +30,9 @@ type PauseWorkflowExecutionSuite struct {
 	workflowFn      func(ctx workflow.Context) (string, error)
 	childWorkflowFn func(ctx workflow.Context) (string, error)
 	activityFn      func(ctx context.Context) (string, error)
+
+	activityCompletedCh   chan struct{}
+	activityCompletedOnce sync.Once
 }
 
 func TestPauseWorkflowExecutionSuite(t *testing.T) {
@@ -43,6 +47,7 @@ func (s *PauseWorkflowExecutionSuite) SetupTest() {
 	s.testEndSignal = "test-end"
 	s.pauseIdentity = "functional-test"
 	s.pauseReason = "pausing workflow for acceptance test"
+	s.activityCompletedCh = make(chan struct{}, 1)
 
 	s.workflowFn = func(ctx workflow.Context) (string, error) {
 		ao := workflow.ActivityOptions{
@@ -72,6 +77,10 @@ func (s *PauseWorkflowExecutionSuite) SetupTest() {
 	}
 
 	s.activityFn = func(ctx context.Context) (string, error) {
+		s.activityCompletedOnce.Do(func() {
+			// blocks until the test case unblocks the activity.
+			<-s.activityCompletedCh
+		})
 		return "activity", nil
 	}
 }
@@ -116,6 +125,27 @@ func (s *PauseWorkflowExecutionSuite) TestPauseUnpauseWorkflowExecution() {
 	s.NoError(err)
 	s.NotNil(pauseResp)
 
+	// unblock the activity to complete.
+	s.activityCompletedCh <- struct{}{}
+
+	// ensure that the workflow is paused even when the activity is completed.
+	s.EventuallyWithT(func(t *assert.CollectT) {
+		desc, err := s.SdkClient().DescribeWorkflowExecution(ctx, workflowID, runID)
+		require.NoError(t, err)
+		info := desc.GetWorkflowExecutionInfo()
+		require.NotNil(t, info)
+		require.Equal(t, enumspb.WORKFLOW_EXECUTION_STATUS_PAUSED, info.GetStatus())
+		if pauseInfo := desc.GetWorkflowExtendedInfo().GetPauseInfo(); pauseInfo != nil {
+			require.Equal(t, s.pauseIdentity, pauseInfo.GetIdentity())
+			require.Equal(t, s.pauseReason, pauseInfo.GetReason())
+		}
+	}, 5*time.Second, 200*time.Millisecond)
+
+	// Send unblock signal to the workflow to complete and assert that the workflow stays paused.
+	err = s.SdkClient().SignalWorkflow(ctx, workflowID, runID, s.testEndSignal, "signal to complete the workflow")
+	s.NoError(err)
+
+	time.Sleep(2 * time.Second) // wait 2 seconds to give enough time record the signal.
 	s.EventuallyWithT(func(t *assert.CollectT) {
 		desc, err := s.SdkClient().DescribeWorkflowExecution(ctx, workflowID, runID)
 		require.NoError(t, err)
@@ -141,21 +171,7 @@ func (s *PauseWorkflowExecutionSuite) TestPauseUnpauseWorkflowExecution() {
 	s.NoError(err)
 	s.NotNil(unpauseResp)
 
-	// Wait until unpaused (running again).
-	s.EventuallyWithT(func(t *assert.CollectT) {
-		desc, err := s.SdkClient().DescribeWorkflowExecution(ctx, workflowID, runID)
-		require.NoError(t, err)
-		info := desc.GetWorkflowExecutionInfo()
-		require.NotNil(t, info)
-		require.Equal(t, enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, info.GetStatus())
-		require.Nil(t, desc.GetWorkflowExtendedInfo().GetPauseInfo())
-	}, 5*time.Second, 200*time.Millisecond)
-
-	// TODO: currently pause workflow execution does not intercept workflow creation. Fix the reset of this test when that is implemented.
-	// For now sending this signal will complete the workflow and finish the test.
-	err = s.SdkClient().SignalWorkflow(ctx, workflowID, runID, s.testEndSignal, "test end signal")
-	s.NoError(err)
-
+	// assert that the workflow completes now.
 	s.EventuallyWithT(func(t *assert.CollectT) {
 		desc, err := s.SdkClient().DescribeWorkflowExecution(ctx, workflowID, runID)
 		require.NoError(t, err)
