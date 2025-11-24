@@ -642,16 +642,11 @@ func (e *ChasmEngine) ListExecutions(
 		return nil, serviceerror.NewInternal("unknown chasm component type: " + archetypeType.String())
 	}
 
-	pageSize := request.PageSize
-	if pageSize <= 0 {
-		pageSize = e.config.HistoryMaxPageSize(namespace.Name(request.NamespaceName).String())
-	}
-
 	visReq := &manager.ListChasmExecutionsRequest{
 		ArchetypeID:   archetypeID,
 		NamespaceID:   namespace.ID(request.NamespaceID),
 		Namespace:     namespace.Name(request.NamespaceName),
-		PageSize:      pageSize,
+		PageSize:      request.PageSize,
 		NextPageToken: request.NextPageToken,
 		Query:         request.Query,
 	}
@@ -670,10 +665,12 @@ func (e *ChasmEngine) CountExecutions(
 		return nil, serviceerror.NewInternal("unknown chasm component type: " + archetypeType.String())
 	}
 
-	return e.visibilityMgr.CountChasmExecutions(ctx, &manager.CountChasmExecutionsRequest{
+	visReq := &manager.CountChasmExecutionsRequest{
 		ArchetypeID: archetypeID,
 		NamespaceID: namespace.ID(request.NamespaceID),
 		Namespace:   namespace.Name(request.NamespaceName),
 		Query:       request.Query,
-	})
+	}
+
+	return e.visibilityMgr.CountChasmExecutions(ctx, visReq)
 }
