@@ -1044,7 +1044,11 @@ func (d *VersionWorkflowRunner) executeAndTrackAsyncPropagation(
 	}
 
 	if routingConfig != nil {
-		d.syncSummary(ctx)
+		if workflow.GetVersion(ctx, "no-propagation-sync-summary", workflow.DefaultVersion, 0) == workflow.DefaultVersion {
+			// TODO: clean this unnecessary sync up.
+			// No summary changes happen in async propagation that the deployment workflow
+			d.syncSummary(ctx)
+		}
 		// Signal deployment workflow that routing config propagation completed
 		d.signalPropagationComplete(ctx, routingConfig.GetRevisionNumber())
 	}
