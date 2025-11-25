@@ -562,13 +562,13 @@ func (s *nodeSuite) assertParentPointer(testComponentNode *Node) {
 	_, found := testComponent.ParentPtr.TryGet(chasmContext)
 	s.False(found)
 
-	subComponent1, err := testComponent.SubComponent1.Get(chasmContext)
+	subComponent1 := testComponent.SubComponent1.Get(chasmContext)
 	s.NoError(err)
 	testComponentFromPtr := subComponent1.ParentPtr.Get(chasmContext)
 	// Asserting they actually point to the same testComponent object.
 	s.Same(testComponent, testComponentFromPtr)
 
-	subComponent11, err := subComponent1.SubComponent11.Get(chasmContext)
+	subComponent11 := subComponent1.SubComponent11.Get(chasmContext)
 	s.NoError(err)
 	testSubComponent1FromPtr := subComponent11.ParentPtr.Get(chasmContext)
 	// Asserting they actually point to the same testSubComponent1 object.
