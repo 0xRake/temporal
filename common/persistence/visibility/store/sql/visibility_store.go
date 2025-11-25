@@ -243,7 +243,7 @@ func (s *VisibilityStore) countChasmExecutions(
 		return nil, err
 	}
 
-	queryParams, err := s.buildQueryParams(request.Namespace, request.Query, mapper, request.ArchetypeID, sqlQC)
+	queryParams, err := s.buildQueryParams(request.NamespaceID, request.Namespace, request.Query, mapper, request.ArchetypeID, sqlQC)
 	if err != nil {
 		var converterErr *query.ConverterError
 		if errors.As(err, &converterErr) {
@@ -332,7 +332,7 @@ func (s *VisibilityStore) listExecutionsInternal(
 		return nil, err
 	}
 
-	queryParams, err := s.buildQueryParams(request.Namespace, request.Query, request.ChasmMapper, request.ArchetypeID, sqlQC)
+	queryParams, err := s.buildQueryParams(request.NamespaceID, request.Namespace, request.Query, request.ChasmMapper, request.ArchetypeID, sqlQC)
 	if err != nil {
 		// Convert ConverterError to InvalidArgument and pass through all other errors (which should be
 		// only mapper errors).
@@ -551,7 +551,7 @@ func (s *VisibilityStore) countWorkflowExecutions(
 		return nil, err
 	}
 
-	queryParams, err := s.buildQueryParams(request.Namespace, request.Query, nil, chasm.UnspecifiedArchetypeID, sqlQC)
+	queryParams, err := s.buildQueryParams(request.NamespaceID, request.Namespace, request.Query, nil, chasm.UnspecifiedArchetypeID, sqlQC)
 	if err != nil {
 		// Convert ConverterError to InvalidArgument and pass through all other errors (which should be
 		// only mapper errors).
@@ -634,6 +634,7 @@ func (s *VisibilityStore) countGroupByWorkflowExecutions(
 }
 
 func (s *VisibilityStore) buildQueryParams(
+	namespaceID namespace.ID,
 	namespaceName namespace.Name,
 	queryString string,
 	chasmMapper *chasm.VisibilitySearchAttributesMapper,
@@ -655,6 +656,20 @@ func (s *VisibilityStore) buildQueryParams(
 		WithArchetypeID(archetypeID)
 
 	queryParams, err := c.Convert(queryString)
+	if err != nil {
+		return nil, err
+	}
+
+	nsFilterExpr, err := sqlQC.ConvertComparisonExpr(
+		sqlparser.EqualStr,
+		query.NamespaceIDSAColumn,
+		namespaceID.String(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	queryParams.QueryExpr, err = sqlQC.BuildAndExpr(nsFilterExpr, queryParams.QueryExpr)
 	if err != nil {
 		return nil, err
 	}
