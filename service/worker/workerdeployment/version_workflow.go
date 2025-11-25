@@ -377,7 +377,7 @@ func (d *VersionWorkflowRunner) deleteVersionFromTaskQueuesAsync(ctx workflow.Co
 	// Not counting the possible wait for previous propagations in this propagation latency.
 	startTime := workflow.Now(ctx)
 	defer func() {
-		d.metrics.Timer(metrics.VersioningDataPropagationLatency.Name()).Record(time.Since(startTime))
+		d.metrics.Timer(metrics.VersioningDataPropagationLatency.Name()).Record(workflow.Now(ctx).Sub(startTime))
 	}()
 	d.deleteVersionFromTaskQueues(ctx, workflow.WithActivityOptions(ctx, propagationActivityOptions))
 	d.asyncPropagationsInProgress--
@@ -965,7 +965,7 @@ func (d *VersionWorkflowRunner) syncTaskQueuesAsync(
 ) error {
 	startTime := workflow.Now(ctx)
 	defer func() {
-		d.metrics.Timer(metrics.VersioningDataPropagationLatency.Name()).Record(time.Since(startTime))
+		d.metrics.Timer(metrics.VersioningDataPropagationLatency.Name()).Record(workflow.Now(ctx).Sub(startTime))
 	}()
 
 	state := d.GetVersionState()
@@ -1056,8 +1056,9 @@ func (d *VersionWorkflowRunner) executeAndTrackAsyncPropagation(
 
 	if routingConfig != nil {
 		if workflow.GetVersion(ctx, "no-propagation-sync-summary", workflow.DefaultVersion, 0) == workflow.DefaultVersion {
-			// TODO: clean this unnecessary sync up.
-			// No summary changes happen in async propagation that the deployment workflow
+			// TODO: clean this unnecessary sync.
+			// No summary changes need to happen after async propagation because the deployment
+			// workflow has already got the latest summary from update response.
 			d.syncSummary(ctx)
 		}
 		// Signal deployment workflow that routing config propagation completed

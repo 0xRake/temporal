@@ -14,10 +14,10 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
 	deploymentspb "go.temporal.io/server/api/deployment/v1"
 	"go.temporal.io/server/api/matchingservice/v1"
-	"go.temporal.io/server/common/log/tag"
 	"go.temporal.io/server/common/metrics"
 	"go.temporal.io/server/common/namespace"
 	"go.temporal.io/server/common/worker_versioning"
@@ -53,16 +53,7 @@ func (a *VersionActivities) SyncDeploymentVersionUserData(
 	input *deploymentspb.SyncDeploymentVersionUserDataRequest,
 ) (*deploymentspb.SyncDeploymentVersionUserDataResponse, error) {
 	logger := activity.GetLogger(ctx)
-	scheduledTime := activity.GetInfo(ctx).ScheduledTime
-
-	if scheduledTime.Add(SlowPropagationDelay).Before(time.Now()) {
-		a.Logger.Warn("Slow propagation detected, attempting to sync user data",
-			tag.WorkflowNamespace(a.namespace.Name().String()),
-			tag.Deployment(input.DeploymentName),
-			tag.BuildId(input.GetVersion().GetBuildId()),
-		)
-		a.MetricsHandler.Counter(metrics.SlowVersioningDataPropagationCounter.Name()).Record(1)
-	}
+	defer a.checkSlowPropagation(ctx, logger)
 
 	errs := make(chan error)
 
@@ -127,17 +118,17 @@ func (a *VersionActivities) SyncDeploymentVersionUserData(
 	return &deploymentspb.SyncDeploymentVersionUserDataResponse{TaskQueueMaxVersions: maxVersionByName}, nil
 }
 
-func (a *VersionActivities) CheckWorkerDeploymentUserDataPropagation(ctx context.Context, input *deploymentspb.CheckWorkerDeploymentUserDataPropagationRequest) error {
-	scheduledTime := activity.GetInfo(ctx).ScheduledTime
-
-	if scheduledTime.Add(SlowPropagationDelay).Before(time.Now()) {
-		a.Logger.Warn("Slow propagation detected, awaiting task queue partition propagation",
-			tag.WorkflowNamespace(a.namespace.Name().String()),
-		)
+func (a *VersionActivities) checkSlowPropagation(ctx context.Context, logger log.Logger) {
+	firstAttemptScheduledTime := activity.GetInfo(ctx).ScheduledTime
+	if firstAttemptScheduledTime.Add(SlowPropagationDelay).Before(time.Now()) {
+		logger.Warn("Slow propagation detected", "duration", time.Since(firstAttemptScheduledTime))
 		a.MetricsHandler.Counter(metrics.SlowVersioningDataPropagationCounter.Name()).Record(1)
 	}
+}
 
+func (a *VersionActivities) CheckWorkerDeploymentUserDataPropagation(ctx context.Context, input *deploymentspb.CheckWorkerDeploymentUserDataPropagationRequest) error {
 	logger := activity.GetLogger(ctx)
+	defer a.checkSlowPropagation(ctx, logger)
 
 	errs := make(chan error)
 
