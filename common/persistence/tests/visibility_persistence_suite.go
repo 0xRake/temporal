@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -111,7 +111,7 @@ func (s *VisibilityPersistenceSuite) TearDownSuite() {
 
 // TestBasicVisibility test
 func (s *VisibilityPersistenceSuite) TestBasicVisibility() {
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 	startTime := time.Now().UTC().Add(time.Second * -5)
 	startReq := s.createOpenWorkflowRecord(
 		testNamespaceUUID,
@@ -181,7 +181,7 @@ func (s *VisibilityPersistenceSuite) TestBasicVisibility() {
 
 // TestBasicVisibilityTimeSkew test
 func (s *VisibilityPersistenceSuite) TestBasicVisibilityTimeSkew() {
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 
 	startTime := time.Now()
 	openRecord := s.createOpenWorkflowRecord(
@@ -251,7 +251,7 @@ func (s *VisibilityPersistenceSuite) TestBasicVisibilityTimeSkew() {
 }
 
 func (s *VisibilityPersistenceSuite) TestBasicVisibilityShortWorkflow() {
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 
 	startTime := time.Now().UTC()
 	openRecord := s.createOpenWorkflowRecord(
@@ -304,7 +304,7 @@ func (s *VisibilityPersistenceSuite) TestBasicVisibilityShortWorkflow() {
 
 // TestVisibilityPagination test
 func (s *VisibilityPersistenceSuite) TestVisibilityPagination() {
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 
 	// Create 2 executions
 	startTime1 := time.Now().UTC()
@@ -385,7 +385,7 @@ func (s *VisibilityPersistenceSuite) TestVisibilityPagination() {
 
 // TestFilteringByStartTime test
 func (s *VisibilityPersistenceSuite) TestFilteringByStartTime() {
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 	startTime := time.Now()
 
 	// Create 2 open workflows, one started 2hrs ago, the other started just now.
@@ -455,7 +455,7 @@ func (s *VisibilityPersistenceSuite) TestFilteringByStartTime() {
 
 // TestFilteringByType test
 func (s *VisibilityPersistenceSuite) TestFilteringByType() {
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 	startTime := time.Now()
 
 	// Create 2 executions
@@ -545,7 +545,7 @@ func (s *VisibilityPersistenceSuite) TestFilteringByType() {
 
 // TestFilteringByWorkflowID test
 func (s *VisibilityPersistenceSuite) TestFilteringByWorkflowID() {
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 	startTime := time.Now()
 
 	// Create 2 executions
@@ -635,7 +635,7 @@ func (s *VisibilityPersistenceSuite) TestFilteringByWorkflowID() {
 
 // TestFilteringByStatus test
 func (s *VisibilityPersistenceSuite) TestFilteringByStatus() {
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 	startTime := time.Now()
 	executionTime := startTime
 
@@ -698,7 +698,7 @@ func (s *VisibilityPersistenceSuite) TestFilteringByStatus() {
 func (s *VisibilityPersistenceSuite) TestDeleteWorkflow() {
 	openRows := 10
 	closedRows := 5
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 	closeTime := time.Now().UTC()
 	startTime := closeTime.Add(-5 * time.Second)
 	executionTime := closeTime.Add(-4 * time.Second)
@@ -706,7 +706,7 @@ func (s *VisibilityPersistenceSuite) TestDeleteWorkflow() {
 	for i := 0; i < openRows; i++ {
 		startReq := s.createOpenWorkflowRecord(
 			testNamespaceUUID,
-			uuid.New(),
+			uuid.NewString(),
 			"visibility-workflow",
 			startTime,
 			executionTime,
@@ -860,7 +860,7 @@ func (s *VisibilityPersistenceSuite) TestUpsertWorkflowExecution() {
 
 // TestGetWorkflowExecution test
 func (s *VisibilityPersistenceSuite) TestGetWorkflowExecution() {
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 	closeTime := time.Now().UTC()
 	startTime := closeTime.Add(-5 * time.Second)
 
@@ -912,7 +912,7 @@ func (s *VisibilityPersistenceSuite) TestGetWorkflowExecution() {
 
 // TestAdvancedVisibilityPagination test
 func (s *VisibilityPersistenceSuite) TestAdvancedVisibilityPagination() {
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 
 	// Generate 5 workflow records, keep 2 open and 3 closed.
 	var startReqs []*manager.RecordWorkflowExecutionStartedRequest
@@ -965,7 +965,7 @@ func (s *VisibilityPersistenceSuite) TestAdvancedVisibilityPagination() {
 }
 
 func (s *VisibilityPersistenceSuite) TestCountWorkflowExecutions() {
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 	closeTime := time.Now().UTC()
 	startTime := closeTime.Add(-5 * time.Second)
 
@@ -993,7 +993,7 @@ func (s *VisibilityPersistenceSuite) TestCountWorkflowExecutions() {
 }
 
 func (s *VisibilityPersistenceSuite) TestCountGroupByWorkflowExecutions() {
-	testNamespaceUUID := namespace.ID(uuid.New())
+	testNamespaceUUID := namespace.ID(uuid.NewString())
 	closeTime := time.Now().UTC()
 	startTime := closeTime.Add(-5 * time.Second)
 
@@ -1114,7 +1114,7 @@ func (s *VisibilityPersistenceSuite) createOpenWorkflowRecord(
 	s.taskID++
 	workflowExecution := commonpb.WorkflowExecution{
 		WorkflowId: workflowID,
-		RunId:      uuid.New(),
+		RunId:      uuid.NewString(),
 	}
 	startReq := &manager.RecordWorkflowExecutionStartedRequest{
 		VisibilityRequestBase: &manager.VisibilityRequestBase{
