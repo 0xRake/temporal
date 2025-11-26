@@ -26,7 +26,6 @@ import (
 	"go.temporal.io/server/common/persistence/visibility/store/query"
 	"go.temporal.io/server/common/resolver"
 	"go.temporal.io/server/common/searchattribute"
-	"go.temporal.io/server/common/searchattribute/sadefs"
 )
 
 type (
@@ -183,7 +182,7 @@ func (s *VisibilityStore) DeleteWorkflowExecution(
 func (s *VisibilityStore) ListWorkflowExecutions(
 	ctx context.Context,
 	request *manager.ListWorkflowExecutionsRequestV2,
-) (*store.InternalListWorkflowExecutionsResponse, error) {
+) (*store.InternalListExecutionsResponse, error) {
 	if s.enableUnifiedQueryConverter() {
 		return s.listWorkflowExecutions(ctx, request)
 	}
@@ -193,7 +192,7 @@ func (s *VisibilityStore) ListWorkflowExecutions(
 func (s *VisibilityStore) ListChasmExecutions(
 	ctx context.Context,
 	request *manager.ListChasmExecutionsRequest,
-) (*store.InternalListWorkflowExecutionsResponse, error) {
+) (*store.InternalListExecutionsResponse, error) {
 	rc, ok := s.chasmRegistry.ComponentByID(request.ArchetypeID)
 	if !ok {
 		return nil, serviceerror.NewInvalidArgument(fmt.Sprintf("unknown archetype ID: %d", request.ArchetypeID))
@@ -313,7 +312,7 @@ func (s *VisibilityStore) countChasmExecutionsLegacy(
 func (s *VisibilityStore) listWorkflowExecutions(
 	ctx context.Context,
 	request *manager.ListWorkflowExecutionsRequestV2,
-) (*store.InternalListWorkflowExecutionsResponse, error) {
+) (*store.InternalListExecutionsResponse, error) {
 	return s.listExecutionsInternal(ctx, &listExecutionsRequestInternal{
 		NamespaceID:   request.NamespaceID,
 		Namespace:     request.Namespace,
@@ -326,7 +325,7 @@ func (s *VisibilityStore) listWorkflowExecutions(
 func (s *VisibilityStore) listExecutionsInternal(
 	ctx context.Context,
 	request *listExecutionsRequestInternal,
-) (*store.InternalListWorkflowExecutionsResponse, error) {
+) (*store.InternalListExecutionsResponse, error) {
 	sqlQC, err := NewSQLQueryConverter(s.GetName())
 	if err != nil {
 		return nil, err
@@ -364,10 +363,10 @@ func (s *VisibilityStore) listExecutionsInternal(
 			fmt.Sprintf("ListWorkflowExecutions operation failed. Select failed: %v", err))
 	}
 	if len(rows) == 0 {
-		return &store.InternalListWorkflowExecutionsResponse{}, nil
+		return &store.InternalListExecutionsResponse{}, nil
 	}
 
-	var infos = make([]*store.InternalWorkflowExecutionInfo, len(rows))
+	var infos = make([]*store.InternalExecutionInfo, len(rows))
 	for i, row := range rows {
 		infos[i], err = s.rowToInfo(&row, request.Namespace, request.ChasmMapper)
 		if err != nil {
@@ -391,7 +390,7 @@ func (s *VisibilityStore) listExecutionsInternal(
 			return nil, err
 		}
 	}
-	return &store.InternalListWorkflowExecutionsResponse{
+	return &store.InternalListExecutionsResponse{
 		Executions:    infos,
 		NextPageToken: nextPageTokenResult,
 	}, nil
@@ -400,7 +399,7 @@ func (s *VisibilityStore) listExecutionsInternal(
 func (s *VisibilityStore) listWorkflowExecutionsLegacy(
 	ctx context.Context,
 	request *manager.ListWorkflowExecutionsRequestV2,
-) (*store.InternalListWorkflowExecutionsResponse, error) {
+) (*store.InternalListExecutionsResponse, error) {
 	return s.listExecutionsInternalLegacy(ctx, &listExecutionsRequestInternal{
 		NamespaceID:   request.NamespaceID,
 		Namespace:     request.Namespace,
@@ -415,7 +414,7 @@ func (s *VisibilityStore) listWorkflowExecutionsLegacy(
 func (s *VisibilityStore) listExecutionsInternalLegacy(
 	ctx context.Context,
 	request *listExecutionsRequestInternal,
-) (*store.InternalListWorkflowExecutionsResponse, error) {
+) (*store.InternalListExecutionsResponse, error) {
 	saTypeMap, err := s.searchAttributesProvider.GetSearchAttributes(s.GetIndexName(), false)
 	if err != nil {
 		return nil, err
@@ -452,10 +451,10 @@ func (s *VisibilityStore) listExecutionsInternalLegacy(
 			fmt.Sprintf("ListWorkflowExecutions operation failed. Select failed: %v", err))
 	}
 	if len(rows) == 0 {
-		return &store.InternalListWorkflowExecutionsResponse{}, nil
+		return &store.InternalListExecutionsResponse{}, nil
 	}
 
-	var infos = make([]*store.InternalWorkflowExecutionInfo, len(rows))
+	var infos = make([]*store.InternalExecutionInfo, len(rows))
 	for i, row := range rows {
 		infos[i], err = s.rowToInfo(&row, request.Namespace, request.ChasmMapper)
 		if err != nil {
@@ -479,7 +478,7 @@ func (s *VisibilityStore) listExecutionsInternalLegacy(
 			return nil, err
 		}
 	}
-	return &store.InternalListWorkflowExecutionsResponse{
+	return &store.InternalListExecutionsResponse{
 		Executions:    infos,
 		NextPageToken: nextPageToken,
 	}, nil
@@ -771,11 +770,11 @@ func (s *VisibilityStore) rowToInfo(
 	row *sqlplugin.VisibilityRow,
 	nsName namespace.Name,
 	chasmMapper *chasm.VisibilitySearchAttributesMapper,
-) (*store.InternalWorkflowExecutionInfo, error) {
+) (*store.InternalExecutionInfo, error) {
 	if row.ExecutionTime.UnixNano() == 0 {
 		row.ExecutionTime = row.StartTime
 	}
-	info := &store.InternalWorkflowExecutionInfo{
+	info := &store.InternalExecutionInfo{
 		WorkflowID:     row.WorkflowID,
 		RunID:          row.RunID,
 		TypeName:       row.WorkflowTypeName,
@@ -788,13 +787,12 @@ func (s *VisibilityStore) rowToInfo(
 		Memo:           persistence.NewDataBlob(row.Memo, row.Encoding),
 	}
 	if row.SearchAttributes != nil && len(*row.SearchAttributes) > 0 {
-		// Always separate CHASM and custom search attributes
-		chasmSAs, customSAs, err := s.processRowSearchAttributes(*row.SearchAttributes, nsName, chasmMapper)
+		// Encode all search attributes together (both CHASM and custom)
+		encodedSAs, err := s.encodeRowSearchAttributes(*row.SearchAttributes, chasmMapper)
 		if err != nil {
 			return nil, err
 		}
-		info.ChasmSearchAttributes = chasmSAs
-		info.SearchAttributes = customSAs
+		info.SearchAttributes = encodedSAs
 	}
 	if row.CloseTime != nil {
 		info.CloseTime = *row.CloseTime
@@ -820,72 +818,49 @@ func (s *VisibilityStore) rowToInfo(
 	return info, nil
 }
 
-func (s *VisibilityStore) processRowSearchAttributes(
+func (s *VisibilityStore) encodeRowSearchAttributes(
 	rowSearchAttributes sqlplugin.VisibilitySearchAttributes,
-	nsName namespace.Name,
 	chasmMapper *chasm.VisibilitySearchAttributesMapper,
-) (map[string]chasm.VisibilityValue, *commonpb.SearchAttributes, error) {
+) (*commonpb.SearchAttributes, error) {
 	saTypeMap, err := s.searchAttributesProvider.GetSearchAttributes(s.GetIndexName(), false)
 	if err != nil {
-		return nil, nil, serviceerror.NewUnavailable(
+		return nil, serviceerror.NewUnavailable(
 			fmt.Sprintf("Unable to read search attributes types: %v", err))
 	}
 
-	// Build combined type map for SQLite keyword list fix
+	// Build combined type map (custom + CHASM types)
 	combinedTypeMap := make(map[string]enumspb.IndexedValueType)
 	maps.Copy(combinedTypeMap, saTypeMap.Custom())
 	maps.Copy(combinedTypeMap, chasmMapper.SATypeMap())
 	finalTypeMap := searchattribute.NewNameTypeMap(combinedTypeMap)
 
-	// Split row search attributes into CHASM and custom based on field name pattern
-	chasmRowSAs := sqlplugin.VisibilitySearchAttributes{}
-	customRowSAs := sqlplugin.VisibilitySearchAttributes{}
-
+	// Fix SQLite keyword list handling (convert string to []string for keyword lists)
 	for name, value := range rowSearchAttributes {
-		// Fix SQLite keyword list handling (convert string to []string for keyword lists)
 		tp, err := finalTypeMap.GetType(name)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if tp == enumspb.INDEXED_VALUE_TYPE_KEYWORD_LIST {
 			switch v := value.(type) {
 			case []string:
 				// no-op
 			case string:
-				(rowSearchAttributes)[name] = []string{v}
+				rowSearchAttributes[name] = []string{v}
 			default:
-				return nil, nil, serviceerror.NewInternal(
+				return nil, serviceerror.NewInternal(
 					fmt.Sprintf("Unexpected data type for keyword list: %T (expected list of strings)", v),
 				)
 			}
 		}
-
-		if sadefs.IsChasmSearchAttribute(name) {
-			chasmRowSAs[name] = value
-		} else {
-			customRowSAs[name] = value
-		}
 	}
 
-	chasmSAs, err := chasm.AliasChasmSearchAttributes(chasmRowSAs, chasmMapper)
+	// Encode all search attributes together
+	encodedSAs, err := searchattribute.Encode(rowSearchAttributes, &finalTypeMap)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	customSAs, err := searchattribute.Encode(customRowSAs, &saTypeMap)
-	if err != nil {
-		return nil, nil, err
-	}
-	customSAs, err = searchattribute.AliasFields(
-		s.searchAttributesMapperProvider,
-		customSAs,
-		nsName.String(),
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return chasmSAs, customSAs, nil
+	return encodedSAs, nil
 }
 
 func (s *VisibilityStore) AddSearchAttributes(
