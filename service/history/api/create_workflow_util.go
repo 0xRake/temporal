@@ -215,6 +215,7 @@ func ValidateStart(
 	workflowID string,
 	workflowInputSize int,
 	workflowMemoSize int,
+	workflowHeaderSize int,
 	operation string,
 ) error {
 	config := shard.GetConfig()
@@ -222,6 +223,8 @@ func ValidateStart(
 	throttledLogger := shard.GetThrottledLogger()
 	namespaceName := namespaceEntry.Name().String()
 
+	metricsHandler := interceptor.GetMetricsHandlerFromContext(ctx, logger).WithTags(metrics.CommandTypeTag(operation))
+	metrics.HeaderSize.With(metricsHandler).Record(int64(workflowHeaderSize))
 	if err := common.CheckEventBlobSizeLimit(
 		workflowInputSize,
 		config.BlobSizeLimitWarn(namespaceName),
@@ -229,15 +232,14 @@ func ValidateStart(
 		namespaceName,
 		workflowID,
 		"",
-		interceptor.GetMetricsHandlerFromContext(ctx, logger).WithTags(metrics.CommandTypeTag(operation)),
+		metricsHandler,
 		throttledLogger,
 		tag.BlobSizeViolationOperation(operation),
 	); err != nil {
 		return err
 	}
 
-	handler := interceptor.GetMetricsHandlerFromContext(ctx, logger).WithTags(metrics.CommandTypeTag(operation))
-	metrics.MemoSize.With(handler).Record(int64(workflowMemoSize))
+	metrics.MemoSize.With(metricsHandler).Record(int64(workflowMemoSize))
 	if err := common.CheckEventBlobSizeLimit(
 		workflowMemoSize,
 		config.MemoSizeLimitWarn(namespaceName),
@@ -245,7 +247,7 @@ func ValidateStart(
 		namespaceName,
 		workflowID,
 		"",
-		handler,
+		metricsHandler,
 		throttledLogger,
 		tag.BlobSizeViolationOperation(operation),
 	); err != nil {
@@ -309,6 +311,7 @@ func ValidateStartWorkflowExecutionRequest(
 		workflowID,
 		request.GetInput().Size(),
 		request.GetMemo().Size(),
+		request.GetHeader().Size(),
 		operation,
 	)
 }

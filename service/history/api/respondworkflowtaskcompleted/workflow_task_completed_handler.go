@@ -462,8 +462,11 @@ func (handler *workflowTaskCompletedHandler) handleCommandScheduleActivity(
 		}
 	}
 
+	tag := metrics.CommandTypeTag(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK.String())
+	metricsHandler := handler.metricsHandler.WithTags(tag)
+	metrics.HeaderSize.With(metricsHandler).Record(int64(attr.GetHeader().Size()))
 	if err := handler.sizeLimitChecker.checkIfPayloadSizeExceedsLimit(
-		metrics.CommandTypeTag(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK.String()),
+		tag,
 		attr.GetInput().Size(),
 		"ScheduleActivityTaskCommandAttributes.Input exceeds size limit.",
 	); err != nil {
@@ -902,8 +905,11 @@ func (handler *workflowTaskCompletedHandler) handleCommandRecordMarker(
 		return nil, err
 	}
 
+	tag := metrics.CommandTypeTag(enumspb.COMMAND_TYPE_RECORD_MARKER.String())
+	metricsHandler := handler.metricsHandler.WithTags(tag)
+	metrics.HeaderSize.With(metricsHandler).Record(int64(attr.GetHeader().Size()))
 	if err := handler.sizeLimitChecker.checkIfPayloadSizeExceedsLimit(
-		metrics.CommandTypeTag(enumspb.COMMAND_TYPE_RECORD_MARKER.String()),
+		tag,
 		common.GetPayloadsMapSize(attr.GetDetails()),
 		"RecordMarkerCommandAttributes.Details exceeds size limit.",
 	); err != nil {
@@ -959,8 +965,11 @@ func (handler *workflowTaskCompletedHandler) handleCommandContinueAsNewWorkflow(
 		}
 	}
 
+	commandTypeTag := metrics.CommandTypeTag(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION.String())
+	metricsHandler := handler.metricsHandler.WithTags(commandTypeTag)
+	metrics.HeaderSize.With(metricsHandler).Record(int64(attr.GetHeader().Size()))
 	if err := handler.sizeLimitChecker.checkIfPayloadSizeExceedsLimit(
-		metrics.CommandTypeTag(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION.String()),
+		commandTypeTag,
 		attr.GetInput().Size(),
 		"ContinueAsNewWorkflowExecutionCommandAttributes. Input exceeds size limit.",
 	); err != nil {
@@ -969,7 +978,7 @@ func (handler *workflowTaskCompletedHandler) handleCommandContinueAsNewWorkflow(
 
 	if err := handler.sizeLimitChecker.checkIfMemoSizeExceedsLimit(
 		attr.GetMemo(),
-		metrics.CommandTypeTag(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION.String()),
+		commandTypeTag,
 		"ContinueAsNewWorkflowExecutionCommandAttributes. Memo exceeds size limit.",
 	); err != nil {
 		return nil, handler.terminateWorkflow(enumspb.WORKFLOW_TASK_FAILED_CAUSE_BAD_CONTINUE_AS_NEW_ATTRIBUTES, err)
@@ -979,7 +988,7 @@ func (handler *workflowTaskCompletedHandler) handleCommandContinueAsNewWorkflow(
 	if err := handler.sizeLimitChecker.checkIfSearchAttributesSizeExceedsLimit(
 		attr.GetSearchAttributes(),
 		namespaceName,
-		metrics.CommandTypeTag(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION.String()),
+		commandTypeTag,
 	); err != nil {
 		return nil, handler.terminateWorkflow(enumspb.WORKFLOW_TASK_FAILED_CAUSE_BAD_CONTINUE_AS_NEW_ATTRIBUTES, err)
 	}
@@ -1080,8 +1089,11 @@ func (handler *workflowTaskCompletedHandler) handleCommandStartChildWorkflow(
 		}
 	}
 
+	tag := metrics.CommandTypeTag(enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION.String())
+	metricsHandler := handler.metricsHandler.WithTags(tag)
+	metrics.HeaderSize.With(metricsHandler).Record(int64(attr.GetHeader().Size()))
 	if err := handler.sizeLimitChecker.checkIfPayloadSizeExceedsLimit(
-		metrics.CommandTypeTag(enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION.String()),
+		tag,
 		attr.GetInput().Size(),
 		"StartChildWorkflowExecutionCommandAttributes. Input exceeds size limit.",
 	); err != nil {
@@ -1090,7 +1102,7 @@ func (handler *workflowTaskCompletedHandler) handleCommandStartChildWorkflow(
 
 	if err := handler.sizeLimitChecker.checkIfMemoSizeExceedsLimit(
 		attr.GetMemo(),
-		metrics.CommandTypeTag(enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION.String()),
+		tag,
 		"StartChildWorkflowExecutionCommandAttributes.Memo exceeds size limit.",
 	); err != nil {
 		return nil, handler.terminateWorkflow(enumspb.WORKFLOW_TASK_FAILED_CAUSE_BAD_START_CHILD_EXECUTION_ATTRIBUTES, err)
@@ -1100,7 +1112,7 @@ func (handler *workflowTaskCompletedHandler) handleCommandStartChildWorkflow(
 	if err := handler.sizeLimitChecker.checkIfSearchAttributesSizeExceedsLimit(
 		attr.GetSearchAttributes(),
 		targetNamespace,
-		metrics.CommandTypeTag(enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION.String()),
+		tag,
 	); err != nil {
 		return nil, handler.terminateWorkflow(enumspb.WORKFLOW_TASK_FAILED_CAUSE_BAD_START_CHILD_EXECUTION_ATTRIBUTES, err)
 	}
@@ -1159,8 +1171,11 @@ func (handler *workflowTaskCompletedHandler) handleCommandSignalExternalWorkflow
 		return nil, handler.failWorkflowTask(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PENDING_SIGNALS_LIMIT_EXCEEDED, err)
 	}
 
+	tag := metrics.CommandTypeTag(enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION.String())
+	metricsHandler := handler.metricsHandler.WithTags(tag)
+	metrics.HeaderSize.With(metricsHandler).Record(int64(attr.GetHeader().Size()))
 	if err := handler.sizeLimitChecker.checkIfPayloadSizeExceedsLimit(
-		metrics.CommandTypeTag(enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION.String()),
+		tag,
 		attr.GetInput().Size(),
 		"SignalExternalWorkflowExecutionCommandAttributes.Input exceeds size limit.",
 	); err != nil {
